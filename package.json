@@ -1,24 +1,24 @@
 {
-  "name": "koop-pgcache",
-  "version": "0.0.5",
-  "description": "A postgis cache for koop",
+  "name": "koop-escache",
+  "version": "0.0.1",
+  "description": "An Elastic Search cache for koop",
   "main": "index.js",
   "scripts": {
     "test": "mocha test/ -t 20000"
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/Esri/koop-pgcache.git"
+    "url": "git://github.com/koopjs/koop-escache.git"
   },
   "author": "Chris Helm",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Esri/koop-pgcache/issues"
+    "url": "https://github.com/koopjs/koop-escache/issues"
   },
-  "homepage": "https://github.com/Esri/koop-pgcache",
+  "homepage": "https://github.com/koopjs/koop-escache",
   "dependencies": {
-    "pg": "^4.2.0",
-    "sphericalmercator": "^1.0.3"
+    "elasticsearch": "^4.0.2",
+    "turf-extent": "^1.0.4"
   },
   "directories": {
     "test": "test"

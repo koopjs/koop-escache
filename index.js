@@ -1,15 +1,11 @@
-var pg = require('pg');
-
-var sm = require('sphericalmercator'),
-  merc = new sm({size:256});
+var elasticsearch = require('elasticsearch'),
+  turfExtent = require('turf-extent');
 
 module.exports = {
-  infoTable: 'koopinfo', 
-  timerTable: 'kooptimers',
+  indexName: 'koop', 
   limit: 2000,
 
   connect: function( conn, koop, callback ){
-    var self = this;
   
     // use the koop logger 
     this.log = koop.log;
@@ -17,16 +13,9 @@ module.exports = {
     // save the connection string
     this.conn = conn;
 
-    this.client = new pg.Client( conn );
-    this.client.connect(function(err) {
-      if ( err ){
-        console.log('Could not connect to the database');
-        process.exit();
-      } else {
-        // creates table only if they dont exist
-        self._createTable(self.infoTable, "( id varchar(255) PRIMARY KEY, info JSON)", null);
-        self._createTable(self.timerTable, "( id varchar(255) PRIMARY KEY, expires varchar(25))", null);
-      }
+    this.client = new elasticsearch.Client(conn);
+    // creates table only if they dont exist
+    this._createIndex( this.indexName, function(err, done){
       if ( callback ){
         callback();
       }
@@ -37,267 +26,97 @@ module.exports = {
   // returns the info doc for a key 
   getCount: function( key, options, callback ){
     var self = this;
-    var select = 'select count(*) as count from "'+key+'"';
-    if ( options.where ){
-      if ( options.where != '1=1'){
-        var clause = this.createWhereFromSql(options.where);
-        select += ' WHERE ' + clause;
-      } else {
-        select += ' WHERE ' + options.where;
+    var params = this.buildQueryParams(key, options);
+    this.client.search( params, function(err, result){
+      if ( err || !result ){
+        return callback(err, null);
       }
-    }
-
-    if ( options.geometry ){
-      var geom = this.parseGeometry( options.geometry );
-
-      if ((geom.xmin || geom.xmin === 0) && (geom.ymin || geom.ymin === 0)){
-        var box = geom;
-        if (box.spatialReference.wkid != 4326){
-          var mins = merc.inverse( [box.xmin, box.ymin] ),
-            maxs = merc.inverse( [box.xmax, box.ymax] );
-          box.xmin = mins[0];
-          box.ymin = mins[1];
-          box.xmax = maxs[0];
-          box.ymax = maxs[1];
-        }
-
-        select += (options.where ) ? ' AND ' : ' WHERE ';
-        var bbox = box.xmin+' '+box.ymin+','+box.xmax+' '+box.ymax;
-        //select += 'geom && ST_SetSRID(\'BOX3D('+bbox+')\'::box3d,4326)';
-        select += 'ST_GeomFromGeoJSON(feature->>\'geometry\') && ST_SetSRID(\'BOX3D('+bbox+')\'::box3d,4326)';
-      }
-    }
-
-    this._query(select, function(err, result){
-      if ( err || !result || !result.rows || !result.rows.length ){
-        callback('Key Not Found ' + key, null);
-      } else {
-        self.log.debug('Get Count', result.rows[0].count, select);
-        callback(null, parseInt(result.rows[0].count));
-      }
+      self.log.debug('Get Count', key, result.hits.total);
+      callback(null, result.hits.total);
     });
+  },
+
+  createExtent: function(geometry){
+    var extent;
+    var geom = this.parseGeometry( geometry );
+    if ((geom.xmin || geom.xmin === 0) && (geom.ymin || geom.ymin === 0)){
+      var box = geom;
+      if ( box.spatialReference.wkid != 4326 ){
+        var mins = merc.inverse( [box.xmin, box.ymin] ),
+          maxs = merc.inverse( [box.xmax, box.ymax] );
+        extent = this.convertExtent([mins[0], mins[1], maxs[0], maxs[1]]);
+      } else {
+        extent = this.convertExtent([box.xmin, box.ymin, box.xmax, box.ymax]);
+      }
+    }
+    return extent;
   },
 
   // returns the info doc for a key 
   getInfo: function( key, callback ){
-    this._query('select info from "'+this.infoTable+'" where id=\''+key+":info\'", function(err, result){
-      if ( err || !result || !result.rows || !result.rows.length ){
-        callback('Key Not Found ' + key, null);
-      } else {
-        var info = result.rows[0].info;
-        callback(null, info);
+    this.client.get({
+      index: this.indexName,
+      type: 'info',
+      id: key
+    }, function(err, res){
+      var info;
+      if (!err && res){
+        info = res._source;
       }
+      callback(err, info);
     });
   },
 
   // updates the info doc for a key 
   updateInfo: function( key, info, callback ){
     this.log.debug('Updating info %s %s', key, info.status);
-    this._query("update " + this.infoTable + " set info = '" + JSON.stringify(info) + "' where id = '"+key+":info'", function(err, result){
-      if ( err || !result ){
-        callback('Key Not Found ' + key, null);
+    this.client.update({
+      index: this.indexName,
+      type: 'info',
+      id: key,
+      body: {
+          doc: info
+      }
+    }, function(err, res){
+      if ( err || !res ){
+        callback(err, null);
       } else {
-        callback(null, true);
+        callback(null, info);
       }
     });
   },
 
-  // check for any coded values in the fields
-  // if we find a match, replace value with the coded val
-  applyCodedDomains: function(fieldName, value, fields){
-    fields.forEach(function (field){
-      if (field.domain && (field.domain.name && field.domain.name == fieldName)){
-        field.domain.codedValues.forEach(function(coded){
-          if (parseInt(coded.code) == parseInt(value)){
-            value = coded.name;
-          }
-        });
-      }
-    });
-    return value;
-  },
-
-  createRangeFilterFromSql: function (sql, fields) {
-
-    var paramIndex = 0;
-    var terms, type;
-    if (sql.indexOf(' >= ') > -1) {
-      terms = sql.split(' >= ');
-      type = '>=';
-    } else if (sql.indexOf(' <= ') > -1) {
-      terms = sql.split(' <= ');
-      paramIndex = 1;
-      type = '<=';
-    } else if (sql.indexOf(' = ') > -1) {
-      terms = sql.split(' = ');
-      paramIndex = 1;
-      type = '=';
-    } else if (sql.indexOf(' > ') > -1){
-      terms = sql.split(' > ');
-      paramIndex = 1;
-      type = '>';
-    } else if ( sql.indexOf(' < ') > -1){
-      terms = sql.split(' < ');
-      paramIndex = 1;
-      type = '<';
-    }
-    if (terms.length !== 2) { return; }
-
-    var fieldName = terms[0].replace(/\'([^\']*)'/g, "$1");
-    var value = terms[1];
-
-    // check for fields and apply any coded domains 
-    if (fields){
-      value = this.applyCodedDomains(fieldName, value, fields);
-    }
-    //if (dataType === 'date') {
-    //  value = moment(value.replace(/(\')|(date \')/g, ''), this.dateFormat).toDate().getTime();
-    //}
-    var field = ' (feature->\'properties\'->>\''+ fieldName + '\')';
-    if ( parseInt(value) || parseInt(value) === 0){
-      if ( ( ( parseFloat(value) == parseInt( value ) ) && !isNaN( value )) || value === 0){
-        field += '::float::int';
-      } else {
-        field += '::float';
-      }
-      return field + ' '+type+' ' + value;
-    } else {
-      return field + ' '+type+' \'' + value.replace(/'/g, '') + '\'';
-    }
-
-  },
-
-
-  createLikeFilterFromSql: function (sql, fields, dataset) {
-    var terms = sql.split(' like ');
-    if (terms.length !== 2) { return; }
-
-    // replace N for unicode values so we can rehydrate filter pages
-    var value = terms[1].replace(/^N'/g,'\''); //.replace(/^\'%|%\'$/g, '');
-    // to support downloads we set quotes on unicode fieldname, here we remove them 
-    var fieldName = terms[0].replace(/\'([^\']*)'/g, "$1");
-    
-    // check for fields and apply any coded domains 
-    if (fields){
-      value = this.applyCodedDomains(fieldName, value, fields);
-    }
-
-    field = ' (feature->\'properties\'->>\''+ fieldName + '\')';
-    return field + ' ilike ' + value;
-  },
-
-  createFilterFromSql: function (sql, fields) {
-    if (sql.indexOf(' like ') > -1) {
-      //like
-      return this.createLikeFilterFromSql( sql, fields );
-
-    } else if (
-      sql.indexOf(' < ') > -1 || 
-      sql.indexOf(' > ') > -1 || 
-      sql.indexOf(' >= ') > -1 || 
-      sql.indexOf(' <= ') > -1 || 
-      sql.indexOf(' = ') > -1 )  
-    {
-      //part of a range
-      return this.createRangeFilterFromSql(sql, fields);
-    }
-  },
-
-  createWhereFromSql: function (sql, fields) {
-    var self = this;
-    var terms = sql.split(' AND ');
-    var pairs, filter, andWhere = [], orWhere = [];
-
-    terms.forEach( function (term) {
-      //trim spaces
-      term = term.trim();
-      //remove parens
-      term = term.replace(/(^\()|(\)$)/g, '');
-      pairs = term.split(' OR ');
-      if ( pairs.length > 1 ){
-        pairs.forEach( function (item) {
-          orWhere.push( self.createFilterFromSql( item, fields ) );
-        });
-      } else {
-        pairs.forEach( function (item) {
-          andWhere.push( self.createFilterFromSql( item, fields ) );
-        });
-      }
-    });
-    return andWhere.join(' AND ') + (( orWhere.length ) ? ' AND (' + orWhere.join(' OR ') +')' : '');
-  },
-  
   // get data out of the db
   select: function(key, options, callback){
     var self = this;
-    //var layer = 0;
-    var error = false,
-      totalLayers,
-      queryOpts = {}, 
-      allLayers = [];
 
-    // closure to check each layer and send back when done
-    var collect = function(err, data){
-      if (err) error = err;
-      allLayers.push(data);
-      if (allLayers.length == totalLayers){
-        callback(error, allLayers);
-      }
-    };
-        
-    this._query('select info from "'+this.infoTable+'" where id=\''+(key+':'+(options.layer || 0 )+":info")+'\'', function(err, result){
-      if ( err || !result || !result.rows || !result.rows.length ){
+    if ( key !== 'all'){
+      key = key+'_'+(options.layer || 0 );
+    }
+
+    this.client.get({
+      index: this.indexName,
+      type: 'info',
+      id: key
+    }, function(err, result){
+
+      if ( (err || !result) && key !== 'all'){
         callback('Not Found', []);
-      } else if (result.rows[0].info.status == 'processing' && !options.bypassProcessing ) {
-        callback( null, [{ status: 'processing' }]);
+      } else if (
+        result && 
+        result._source && 
+        result._source.status == 'processing' && 
+        !options.bypassProcessing 
+        ) {
+          callback( null, [{ status: 'processing' }]);
       } else {
-          var info = result.rows[0].info;
-          var select;
-          if (options.simplify){
-            select = 'select id, feature->>\'properties\' as props, st_asgeojson(ST_SimplifyPreserveTopology(ST_GeomFromGeoJSON(feature->>\'geometry\'), '+options.simplify+')) as geom from "' + key+':'+(options.layer || 0)+'"'; 
-          } else {
-            select = 'select id, feature->>\'properties\' as props, feature->>\'geometry\' as geom from "' + key+':'+(options.layer || 0)+'"'; 
-          }
-  
-          // parse the where clause 
-          if ( options.where ) { 
-            if ( options.where != '1=1'){
-              var clause = self.createWhereFromSql(options.where, options.fields);
-              select += ' WHERE ' + clause;
-            } else {
-              select += ' WHERE ' + options.where;
-            }
-            if (options.idFilter){
-              select += ' AND ' + options.idFilter;
-            }
-          } else if (options.idFilter) {
-            select += ' WHERE ' + options.idFilter;
-          }
+          var info = result._source || {};
 
-          // parse the geometry param from GeoServices REST
-          if ( options.geometry ){
-            var geom = self.parseGeometry( options.geometry );
+          var params = self.buildQueryParams(key, options);
 
-            if ((geom.xmin || geom.xmin === 0) && (geom.ymin || geom.ymin === 0)){
-              var box = geom;
-              if (box.spatialReference.wkid != 4326){
-                var mins = merc.inverse( [box.xmin, box.ymin] ),
-                  maxs = merc.inverse( [box.xmax, box.ymax] );
-                box.xmin = mins[0];
-                box.ymin = mins[1];
-                box.xmax = maxs[0];
-                box.ymax = maxs[1];
-              }
-
-              select += (options.where || options.idFilter) ? ' AND ' : ' WHERE ';
-              var bbox = box.xmin+' '+box.ymin+','+box.xmax+' '+box.ymax;
-              select += 'ST_GeomFromGeoJSON(feature->>\'geometry\') && ST_SetSRID(\'BOX3D('+bbox+')\'::box3d,4326)';
-              //select += 'ST_Intersects(ST_GeomFromGeoJSON(feature->>\'geometry\'), ST_MakeEnvelope('+box.xmin+','+box.ymin+','+box.xmax+','+box.ymax+'))';
-            }
-          }
-
-          self._query( select.replace(/ id, feature->>'properties' as props, feature->>'geometry' as geom /, ' count(*) as count '), function(err, result){
-            if (!options.limit && !err && result.rows.length && (result.rows[0].count > self.limit && options.enforce_limit) ){
+          self.client.search(params, function (err, result) {
+          // TODO support for counting   
+          /*if (!options.limit && !err && result.rows.length && (result.rows[0].count > self.limit && options.enforce_limit) ){
               callback( null, [{
                 exceeds_limit: true,
                 type: 'FeatureCollection',
@@ -320,19 +139,15 @@ module.exports = {
               if ( options.offset ) {
                 select += ' OFFSET ' + options.offset;
               }
-              self.log.debug('Selecting data', select);
-              self._query( select, function (err, result) {
-                if ( result && result.rows && result.rows.length ) {
-                  var features = [],
-                    feature;
-                  result.rows.forEach(function(row, i){
-                    features.push({
-                      "type": "Feature",
-                      "id": row.id,
-                      "geometry": JSON.parse(row.geom),
-                      "properties": JSON.parse(row.props)
-                    });
+              self.log.debug('Selecting data', select);*/
+
+                if ( result && result.hits && result.hits.total ) {
+                  var features = [];
+
+                  result.hits.hits.forEach(function(doc, i){
+                    features.push(JSON.parse(doc._source.feature));
                   });
+
                   callback( null, [{
                     type: 'FeatureCollection', 
                     features: features,
@@ -342,7 +157,7 @@ module.exports = {
                     updated_at: info.updated_at,
                     retrieved_at: info.retrieved_at,
                     expires_at: info.expires_at,
-                    count: result.rows.length 
+                    count: result.hits.length 
                   }]);
                 } else {
                   callback( 'Not Found', [{
@@ -350,11 +165,50 @@ module.exports = {
                     features: []
                   }]);
                 }
-              });
-            }
-          });
-        }
+        });
+      }
     });
+  },
+
+  // build the params needed to make a search to the cache 
+  buildQueryParams: function(key, options){
+
+    var params = {
+      index: this.indexName,
+      type: 'features',
+      size: 1000
+    };
+
+    // apply the table/item level query
+    params.body = { "query": { "filtered": {} } };
+    if (key !== 'all') {
+      params.body.query.filtered.query = { "match": {"itemid": key }};
+    }
+
+    // parse the where clause 
+    /*if ( options.where ) { 
+      if ( options.where != '1=1'){
+        //var clause = self.createWhereFromSql(options.where, options.fields);
+        //select += ' WHERE ' + clause;
+      } else {
+        //select += ' WHERE ' + options.where;
+      }
+      if (options.idFilter){
+        //select += ' AND ' + options.idFilter;
+      }
+    } else if (options.idFilter) {
+      //select += ' WHERE ' + options.idFilter;
+    }*/
+
+    // parse the geometry param from GeoServices REST
+    if ( options.geometry ){
+      var extent = this.createExtent( options.geometry );
+      params.body.query.filtered.filter = {
+        "geo_shape": { "extent": { "shape": extent } }
+      };
+    }
+
+    return params;
   },
 
   parseGeometry: function( geometry ){
@@ -398,185 +252,180 @@ module.exports = {
       info.info = geojson.info;
       info.host = geojson.host;
    
-      var table = key+':'+layerId;
+      var table = key+'_'+layerId;
 
-      var feature = (geojson[0]) ? geojson[0].features[0] : geojson.features[0];
-      
-      var types = {
-        'esriGeometryPolyline': 'LineString',
-        'esriGeometryPoint': 'Point',
-        'esriGeometryPolygon': 'Polygon'
-      };
-
-      if (!feature){
-        feature = { geometry: { type: geojson.geomType || types[geojson.info.geometryType] } };
+      if ( geojson.length ){
+        geojson = geojson[0];
       }
 
-      self._createTable( table, self._buildSchemaFromFeature(feature), true, function(err, result){
-        if (err){
-          callback(err, false);
-          return;
-        }
-
-        // insert each feature
-        if ( geojson.length ){
-          geojson = geojson[0];
-        }
-        geojson.features.forEach(function(feature, i){
-          self._query(self._insertFeature(table, feature, i), function(err){ 
-            if (err) {
-              self.log.error(err); 
-            }
-          });
+      // TODO Why not use an update query here? 
+      self.client.delete({
+        index: self.indexName,
+        type: 'info',
+        id: table
+      }, function(err, res){
+        self.client.create({
+          index: self.indexName,
+          type: 'info',
+          id: table,
+          body: JSON.stringify(info)
+        }, function (error, response) {
+          if (geojson.features && geojson.features.length){
+            self.insertPartial(key, geojson, layerId, callback );
+          } else {
+            callback();
+          }
         });
-
-        // TODO Why not use an update query here? 
-        self._query( 'delete from "'+self.infoTable+'" where id=\''+table+':info\'', function(err,res){
-          self._query( 'insert into "'+self.infoTable+'" values (\''+table+':info\',\''+JSON.stringify(info).replace(/'/g,'')+'\')', function(err, result){
-            callback(err, true);
-          });
-        });
-      });     
+      });
     
   },
 
   insertPartial: function( key, geojson, layerId, callback ){
     var self = this;
-    var info = {};
-
-    var sql = 'BEGIN;';
-    var table = key+':'+layerId;
+    var table = key + "_" + layerId;
+    var bulkInsert = [], doc;
     geojson.features.forEach(function(feature, i){
-        sql += self._insertFeature(table, feature, i);
+      bulkInsert.push({ index:  { _index: self.indexName, _type: 'features', _id: table+'_'+i } });
+      doc = {
+        "itemid": table,
+        "feature": JSON.stringify(feature),
+        "extent":  self.convertExtent( turfExtent( feature ))
+      };
+      bulkInsert.push(doc);
     });
-    sql += 'COMMIT;';
-    this._query(sql, function(err, res){
-      if (err){
-        self.log.error('insert partial ERROR %s, %s', err, key);
-        self._query('ROLLBACK;', function(){
-          callback(err, false);
-        });
-      } else {
-        self.log.debug('insert partial SUCCESS %s', key);
-        callback(null, true);
-      }
-    });
+
+    self.client.bulk({
+      body: bulkInsert,
+    }, callback);
   },
 
   // inserts geojson features into the feature column of the given table
-  _insertFeature: function(table, feature, i){
-    if (feature.geometry && feature.geometry.coordinates && feature.geometry.coordinates.length ){
-      feature.geometry.crs = {"type":"name","properties":{"name":"EPSG:4326"}};
-      //return 'insert into "'+table+'" (feature, geom) VALUES (\''+JSON.stringify(feature).replace(/'/g, "")+'\', ST_GeomFromGeoJSON(\''+JSON.stringify(feature.geometry)+'\'));' ;
-      return 'insert into "'+table+'" (feature) VALUES (\''+JSON.stringify(feature).replace(/'/g, "")+'\');' ;
-    } else {
-      return 'insert into "'+table+'" (feature) VALUES (\''+JSON.stringify(feature).replace(/'/g, "")+'\');' ;
+  insertFeature: function(table, feature, i, callback){
+    try {
+      this.client.create({
+        index: this.indexName,
+        type: 'features',
+        id: table+'_'+i,
+        body: {
+          "itemid": table,
+          "feature": JSON.stringify(feature),
+          "extent":  this.convertExtent( turfExtent( feature ))
+        }
+      }, function (err, res) {
+        callback(err, res);
+      });
+    } catch (e) {
+      console.log('Error inserting feature', e);
+      callback(e);
     }
   },
 
-
+  convertExtent: function(coords) {
+    var geometry = [];
+    // upper left
+    geometry.push([parseFloat(coords[0]), parseFloat(coords[3])]);
+    // lower right
+    geometry.push([parseFloat(coords[2]), parseFloat(coords[1])]);
+    var envelope = {
+        "type": "envelope",
+        "coordinates": geometry
+    };
+    return envelope;
+  },
+ 
   remove: function( key, callback){
     var self = this;
-    
-    this._query('select info from "'+this.infoTable+'" where id=\''+(key+":info")+"'", function(err, result){
-      if ( !result || !result.rows.length ){
-        // nothing to remove
-        callback( null, true );
-      } else {
-        var info = result.rows[0].info;
-        self.dropTable(key, function(err, result){
-            self._query("delete from \""+self.infoTable+"\" where id='"+(key+':info')+"'", function(err, result){
-              if (callback) callback( err, true);
-            });
-        });
-      }
+
+    this.client.delete({
+      index: this.indexName,
+      type: 'info',
+      id: key
+    }, function(err, res){
+      self.client.deleteByQuery({
+        index: self.indexName,
+        type: 'features',
+        q: 'itemid:'+key
+      }, function(err, res){
+        callback(err, res);
+      })
     });
+
   },
 
   dropTable: function(table, callback){
-    this._query('drop table "'+table+'"' , callback);
+    this.remove(table, callback);
   },
 
   serviceRegister: function( type, info, callback){
-      var self = this;
-      this._createTable(type, '( id varchar(100), host varchar(100))', null, function(err, result){
-        self._query('select * from "'+type+'" where id=\''+info.id+"\'", function(err, res){
-          if ( err || !res || !res.rows || !res.rows.length ) {
-            var sql = 'insert into "'+type+'" (id, host) VALUES (\''+info.id+'\', \''+info.host+'\')' ;
-            self._query(sql, function(err, res){
-              callback( err, true );
-            });
-          } else {
-            callback( err, true );
-          }
-        });  
+    var self = this;
+    try {
+      this.client.create({
+        index: this.indexName,
+        type: 'services',
+        id: info.id,
+        body: {
+          "type": type,
+          "id": info.id,
+          "host": info.host
+        }
+      }, function (err, res) {
+        callback(err, res);
       });
+    } catch (e) {
+      console.log('Error inserting service', e);
+      callback(e);
+    }
   },
 
   serviceCount: function( type, callback){
-      var sql = 'select count(*) as count from "'+type+'"';
-      this._query(sql, function(err, res){
-        if (err || !res || !res.rows || !res.rows.length){
-          callback( err, 0 );
-        } else {
-          callback( err, res.rows[0].count );
-        }
-      });
+    var self = this;
+    this.client.search({
+      index: this.indexName,
+      type: 'services',
+      q: 'type:'+info.type,
+    }, function (err, res) {
+      callback(err, res.hits.total);
+    });
   },
 
   serviceRemove: function( type, id, callback){
-      var sql = 'delete from "'+type+'" where id=\''+id+"'";
-      this._query(sql, function(err, res){
-        callback( err, true );
-      });
+    this.client.deleteByQuery({
+      index: this.indexName,
+      type: 'services',
+      q: 'id:'+id
+    }, function(err, res){
+      callback(err, res);
+    });
   },
 
   serviceGet: function( type, id, callback){
-      var self = this;
-      var sql;
-      //this._createTable(type, '( id varchar(100), host varchar(100))', null, function(err, result){
-        if (!id) {
-          sql = 'select * from "'+type+'"';
-          self._query(sql, function(err, res){
-            callback( err, (res) ? res.rows : null);
-          });
-        } else {
-          sql = 'select * from "'+type+'" where id=\''+id+"\'";
-          self._query(sql, function(err, res){
-            if (err || !res || !res.rows || !res.rows.length){
-              err = 'No service found by that id';
-              callback( err, null);
-            } else {
-              callback( err, res.rows[0]);
-            }
-          });
-        }
-      //});
+    if (!id) {
+      this.client.search({
+        index: this.indexName,
+        type: 'services',
+        q: 'type:'+type,
+        fields: ['_source']
+      }, function(err, res){
+        var services = res.hits.hits.map(function(s){ return s._source; });
+        callback(err, services);
+      });
+    } else {
+      this.client.search({
+        index: this.indexName,
+        type: 'services',
+        id: id
+      }, function(err, res){
+        callback(err, res.hits.hits[0]._source);
+      });
+    }
   },
 
   timerSet: function(key, expires, callback){
-      var self = this;
-      var now = new Date();
-      var expires_at = new Date( now.getTime() + expires );
-      this._query('delete from "'+ this.timerTable +'" WHERE id=\''+key+"\'", function(err,res){
-        self._query('insert into "'+ self.timerTable +'" (id, expires) VALUES (\''+key+'\', \''+expires_at.getTime()+'\')', function(err, res){
-          callback( err, res);
-        });
-      });
-    },
+    callback( err, true);
+  },
 
   timerGet: function(key, callback){
-    this._query('select * from "'+ this.timerTable + '" where id=\''+key+"\'", function(err, res){
-      if (err || !res || !res.rows || !res.rows.length ){
-        callback( err, null);
-      } else {
-        if ( new Date().getTime() < parseInt( res.rows[0].expires )){
-          callback( err, res.rows[0]);
-        } else {
-          callback( err, null);
-        }
-      }
-    });
+    callback();
   },
 
 
@@ -584,67 +433,75 @@ module.exports = {
   // PRIVATE METHODS
   //-------------
 
-  _query: function(sql, callback){
-    pg.connect(this.conn, function(err, client, done) {
-      if(err) {
-        return console.error('!error fetching client from pool', err);
-      }
-      client.query(sql, function(err, result) {
-        //call `done()` to release the client back to the pool
-        done();
-        if ( callback ) {
-          callback(err, result);
-        }
-      });
-    });
-
-  },
-
-
-  // checks to see in the info table exists, create it if not
-  _createTable: function(name, schema, index, callback){
+  _createIndex: function( name, callback ){
     var self = this;
-    var sql = "select exists(select * from information_schema.tables where table_name='"+ name +"')";
-    this._query(sql, function(err, result){
-      if ( result && !result.rows[0].exists ){
-        var create = "CREATE TABLE \"" + name + "\" " + schema;
-        self.log.info(create);
-        self._query(create, function(err, result){
-            if (err){
-              callback('Failed to create table '+name);
-              return;
+    this.client.indices.create({index: name}, function(err, result) {
+      // create the info index
+      self.client.indices.putMapping({
+        index: name, 
+        type: 'info', 
+        body: {
+          'properties': {
+            'item': {
+              "type": "string",
+              "index": "no"
             }
-
-            if ( index ){
-              self._query( 'CREATE INDEX '+name.replace(/:/g,'')+'_gix ON "'+name+'" USING GIST ( geom )', function(err){
-                if (callback) {
-                  callback();
-                }
-              });
-            } else {
-              if (callback) {
-                callback();
+          }
+        }
+      }, function(err, res){
+        // create the feature index
+        self.client.indices.putMapping({
+          index: name,
+          type: 'features',
+          body: {
+            "properties": {
+              "itemid": {
+                "type": "string"
+              },
+              "feature": {
+                "type": "string",
+                "index": "no"
+              },
+              "extent": {
+                "type": "geo_shape", 
+                "tree": "geohash", 
+                "precision": "500m"
               }
             }
+          }
+        }, function(err, res){
+          self.client.indices.putMapping({
+            index: name,
+            type: 'services',
+            body: {
+              "properties": {
+                "id": { "type": "string" },
+                "type": { "type": "string" },
+                "host": { "type": "string" }
+              }
+            }
+          }, function(err, res){
+            callback();
+          });
         });
-      } else if (callback){
-        callback();
-      }
+      });
     });
   },
 
-  _buildSchemaFromFeature: function(feature){
-    var schema = '(';
-    var type; 
-    if (feature && feature.geometry && feature.geometry.type ){
-      type = feature.geometry.type.toUpperCase();
-    } else {
-      // default to point geoms
-      type = 'POINT';
-    }
-    var props = ['id SERIAL PRIMARY KEY', 'feature JSON', 'geom Geometry('+type+', 4326)'];
-    schema += props.join(',') + ')';
-    return schema;
+  _query: function(type, query, callback){
+    this.client.search({
+      index: this.indexName,
+      type: type,
+      q: query || ''
+    }).then(function (resp) {
+        var hits = resp.hits.hits;
+        if ( callback ) {
+          callback(err, hits);
+        }
+      }, function (err) {
+        console.trace(err.message);
+    });
+
   }
 
 };
