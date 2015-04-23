@@ -11,9 +11,6 @@ module.exports = {
     // use the koop logger 
     this.log = koop.log;
   
-    // save the connection string
-    this.conn = conn;
-
     this.client = new elasticsearch.Client(conn);
     // creates table only if they dont exist
     this._createIndex( this.indexName, function(err, done){
@@ -58,7 +55,7 @@ module.exports = {
     this.client.get({
       index: this.indexName,
       type: 'info',
-      id: key
+      id: key.replace(/:/g,'_')
     }, function(err, res){
       var info;
       if (!err && res){
@@ -74,7 +71,7 @@ module.exports = {
     this.client.update({
       index: this.indexName,
       type: 'info',
-      id: key,
+      id: key.replace(/:/g,'_'),
       body: {
           doc: info
       }
@@ -94,6 +91,7 @@ module.exports = {
     if ( key !== 'all'){
       key = key+'_'+(options.layer || 0 );
     }
+    key = key.replace(/:/g,'_');
 
     this.client.get({
       index: this.indexName,
@@ -183,7 +181,9 @@ module.exports = {
     // apply the table/item level query
     params.body = { "query": { "filtered": {} } };
     if (key !== 'all') {
-      params.body.query.filtered.query = { "match": {"itemid": key }};
+      params.body.query.filtered.query = { "match": {"itemid": key.replace(/:/g,'_') }};
+    } else if (key === 'all' && options.type) { 
+      params.body.query.filtered.query = { "match": {"type": options.type }};
     }
 
     // parse the where clause 
@@ -253,7 +253,7 @@ module.exports = {
       info.info = geojson.info;
       info.host = geojson.host;
    
-      var table = key+'_'+layerId;
+      var table = key.replace(/:/g,'_')+'_'+layerId;
 
       if ( geojson.length ){
         geojson = geojson[0];
@@ -283,12 +283,13 @@ module.exports = {
 
   insertPartial: function( key, geojson, layerId, callback ){
     var self = this;
-    var table = key + "_" + layerId;
+    var table = key.replace(/:/g,'_') + "_" + layerId;
     var bulkInsert = [], doc;
     geojson.features.forEach(function(feature, i){
       bulkInsert.push({ index:  { _index: self.indexName, _type: 'features', _id: table+'_'+i } });
       doc = {
         "itemid": table,
+        "type": table.split('_')[0],
         "feature": JSON.stringify(feature),
         "extent":  self.convertExtent( turfExtent( feature ))
       };
@@ -336,6 +337,9 @@ module.exports = {
  
   remove: function( key, callback){
     var self = this;
+  
+    // other caches use : and ES doesnt like that
+    key = key.replace(/:/g,'_');
 
     this.client.delete({
       index: this.indexName,
@@ -345,7 +349,7 @@ module.exports = {
       self.client.deleteByQuery({
         index: self.indexName,
         type: 'features',
-        q: 'itemid:'+key
+        q: 'itemid:'+key.replace(/\*/,'\\*')
       }, function(err, res){
         callback(err, res);
       })
@@ -422,7 +426,7 @@ module.exports = {
   },
 
   timerSet: function(key, expires, callback){
-    callback(null, true);
+    callback( null, true);
   },
 
   timerGet: function(key, callback){
@@ -457,6 +461,9 @@ module.exports = {
           body: {
             "properties": {
               "itemid": {
+                "type": "string"
+              },
+              "type": {
                 "type": "string"
               },
               "feature": {
