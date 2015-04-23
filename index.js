@@ -2,6 +2,7 @@ var elasticsearch = require('elasticsearch'),
   turfExtent = require('turf-extent');
 
 module.exports = {
+  type: 'elasticsearch',
   indexName: 'koop', 
   limit: 2000,
 
@@ -421,7 +422,7 @@ module.exports = {
   },
 
   timerSet: function(key, expires, callback){
-    callback( err, true);
+    callback(null, true);
   },
 
   timerGet: function(key, callback){
