@@ -1,11 +1,11 @@
-# koop-pgcache
+# koop-escache
 
-A node.js module that exposes a PostGIS data cache for [Koop](https://github.com/Esri/koop).
+A node.js module that exposes an ElasticSearch data cache for [Koop](https://github.com/Esri/koop).
 
 ## Installation
 
 ```
-npm install koop-pgcache
+npm install koop-escache
 ```
 
 ## Using within a Koop Application
@@ -15,9 +15,9 @@ Koop's data caching is by default a local, in-memory object.
 ```js
 var config = require('./config.json');
 var koop = require('koop')(config);
-var koopPg = require('koop-pgcache');
+var koopES = require('koop-escache');
 
-koop.registerCache(koopPg);
+koop.registerCache(koopES);
 ```
 
 ## Resources
