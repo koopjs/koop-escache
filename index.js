@@ -1,6 +1,9 @@
 var elasticsearch = require('elasticsearch'),
   turfExtent = require('turf-extent');
 
+var sm = require('sphericalmercator'),
+  merc = new sm({size:256});
+
 module.exports = {
   type: 'elasticsearch',
   indexName: 'koop', 
