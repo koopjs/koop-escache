@@ -1,9 +1,6 @@
 var elasticsearch = require('elasticsearch'),
   turfExtent = require('turf-extent');
 
-var sm = require('sphericalmercator'),
-  merc = new sm({size:256});
-
 module.exports = {
   type: 'elasticsearch',
   indexName: 'koop', 
@@ -71,6 +68,9 @@ module.exports = {
   // updates the info doc for a key 
   updateInfo: function( key, info, callback ){
     this.log.debug('Updating info %s %s', key, info.status);
+    if (!info.status) {
+      info.status = '';
+    }
     this.client.update({
       index: this.indexName,
       type: 'info',
@@ -101,7 +101,6 @@ module.exports = {
       type: 'info',
       id: key
     }, function(err, result){
-
       if ( (err || !result) && key !== 'all'){
         callback('Not Found', []);
       } else if (
@@ -116,9 +115,8 @@ module.exports = {
 
           var params = self.buildQueryParams(key, options);
 
-          self.client.search(params, function (err, result) {
-          // TODO support for counting   
-          /*if (!options.limit && !err && result.rows.length && (result.rows[0].count > self.limit && options.enforce_limit) ){
+          self.getCount(key, options, function(e, count) {
+            if (!options.limit && !e && count && (count > self.limit && options.enforce_limit) ){
               callback( null, [{
                 exceeds_limit: true,
                 type: 'FeatureCollection',
@@ -129,19 +127,12 @@ module.exports = {
                 updated_at: info.updated_at,
                 retrieved_at: info.retrieved_at,
                 expires_at: info.expires_at, 
-                count: result.rows[0].count
+                count: count
               }]);
 
             } else {
-              // ensure id order 
-              select += " ORDER BY id";
-              if ( options.limit ) {
-                select += ' LIMIT ' + options.limit;
-              }
-              if ( options.offset ) {
-                select += ' OFFSET ' + options.offset;
-              }
-              self.log.debug('Selecting data', select);*/
+
+              self.client.search(params, function (err, result) {
 
                 if ( result && result.hits && result.hits.total ) {
                   var features = [];
@@ -167,7 +158,9 @@ module.exports = {
                     features: []
                   }]);
                 }
-        });
+              });
+            }
+          });
       }
     });
   },
@@ -178,7 +171,7 @@ module.exports = {
     var params = {
       index: this.indexName,
       type: 'features',
-      size: 1000
+      size: options.limit || 10000
     };
 
     // apply the table/item level query
@@ -186,7 +179,7 @@ module.exports = {
     if (key !== 'all') {
       params.body.query.filtered.query = { "match": {"itemid": key.replace(/:/g,'_') }};
     } else if (key === 'all' && options.type) { 
-      params.body.query.filtered.query = { "match": {"type": options.type }};
+      //params.body.query.filtered.query = { "match": {"type": options.type }};
     }
 
     // parse the where clause 
@@ -211,7 +204,6 @@ module.exports = {
         "geo_shape": { "extent": { "shape": extent } }
       };
     }
-
     return params;
   },
 
@@ -261,7 +253,6 @@ module.exports = {
       if ( geojson.length ){
         geojson = geojson[0];
       }
-
       // TODO Why not use an update query here? 
       self.client.delete({
         index: self.indexName,
@@ -289,7 +280,7 @@ module.exports = {
     var table = key.replace(/:/g,'_') + "_" + layerId;
     var bulkInsert = [], doc;
     geojson.features.forEach(function(feature, i){
-      bulkInsert.push({ index:  { _index: self.indexName, _type: 'features', _id: table+'_'+i } });
+      bulkInsert.push({ index:  { _index: self.indexName, _type: 'features'} });
       doc = {
         "itemid": table,
         "type": table.split('_')[0],
@@ -352,7 +343,7 @@ module.exports = {
       self.client.deleteByQuery({
         index: self.indexName,
         type: 'features',
-        q: 'itemid:'+key.replace(/\*/,'\\*')
+        q: 'itemid:'+key.replace(/\*/g,'\\*').replace(/,/g,'\,')
       }, function(err, res){
         callback(err, res);
       })
@@ -390,9 +381,9 @@ module.exports = {
     this.client.search({
       index: this.indexName,
       type: 'services',
-      q: 'type:'+info.type,
+      q: 'type:'+type,
     }, function (err, res) {
-      callback(err, res.hits.total);
+      callback(err, res);
     });
   },
 

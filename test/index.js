@@ -25,27 +25,21 @@ before(function (done) {
   cache.log = new logger( config );
 });
 
+before(function(done){
+  cache.insert( key, repoData[0], 0, function(e,r){
+    done();
+  });
+});
+
+after(function(done){
+  cache.remove( key+'_0', function(e,r){
+    done();
+  });
+});
+
 describe('ES Cache Tests', function(){
   describe('when caching a geojson data', function(){
-    before(function(done){
-      cache.insert( key, repoData[0], 0, function(e,r){
-        // console.log('insert', e, r.items.length);
-        done();
-      });
-    });
-
-    after(function(done){
-      //cache.remove( key+'_0', function(e,r){
-        //console.log(e,r);
-        //done();
-      //});
-      //cache.serviceRemove( 'test', 'test1', function( error, result ){
-        done();
-      //});
-    });
-
     
-
     it('should error when missing key is sent', function(done){
       cache.getInfo(key+'-BS', function( err, data ){
         should.exist( err );
@@ -74,10 +68,12 @@ describe('ES Cache Tests', function(){
     });
 
     it('should insert data with no features', function(done){
-      var k = key+'_0';
+      var k = key+'_zero';
       cache.insert(k, {}, 0, function( err, success ){
         should.not.exist( err );
-        done();
+        cache.remove(k+'_0', function(err, res){
+          done();
+        });
       });
     });
 
