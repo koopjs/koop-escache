@@ -1,9 +1,6 @@
 var elasticsearch = require('elasticsearch'),
   turfExtent = require('turf-extent');
 
-var sm = require('sphericalmercator'),
-  merc = new sm({size:256});
-
 module.exports = {
   type: 'elasticsearch',
   indexName: 'koop', 
@@ -182,7 +179,7 @@ module.exports = {
     if (key !== 'all') {
       params.body.query.filtered.query = { "match": {"itemid": key.replace(/:/g,'_') }};
     } else if (key === 'all' && options.type) { 
-      //params.body.query.filtered.query = { "match": {"type": options.type }};
+      params.body.query.filtered.query = { "match": {"type": options.type }};
     }
 
     // parse the where clause 
@@ -201,10 +198,14 @@ module.exports = {
     }*/
 
     // parse the geometry param from GeoServices REST
-    if ( options.geometry ){
+    if ( options.geometry && !options.geometryType ){
       var extent = this.createExtent( options.geometry );
       params.body.query.filtered.filter = {
         "geo_shape": { "extent": { "shape": extent } }
+      };
+    } else if (options.geometry && options.geometryType === 'polygon'){
+      params.body.query.filtered.filter = {
+        "geo_shape": { "extent": { "shape": { "type":"polygon", "coordinates":JSON.parse(options.geometry)}}}
       };
     }
     return params;
@@ -256,6 +257,7 @@ module.exports = {
       if ( geojson.length ){
         geojson = geojson[0];
       }
+
       // TODO Why not use an update query here? 
       self.client.delete({
         index: self.indexName,
