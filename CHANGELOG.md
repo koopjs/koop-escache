@@ -2,6 +2,10 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.0.7] - 2015-04-28
+### Changed
+* Indexing the actual geometry of the feature as opposed the extent, better searching on arbitrary polygons
+
 ## [0.0.6] - 2015-04-27
 ### Added
 * Support for polygon based filters 
@@ -34,6 +38,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 * Support for insert, select, counting, and removing data
 * 12 tests passing 
 
+[0.0.7]: https://github.com/Esri/koop-pgcache/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/Esri/koop-pgcache/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/Esri/koop-pgcache/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/Esri/koop-pgcache/compare/v0.0.3...v0.0.4

@@ -201,11 +201,11 @@ module.exports = {
     if ( options.geometry && !options.geometryType ){
       var extent = this.createExtent( options.geometry );
       params.body.query.filtered.filter = {
-        "geo_shape": { "extent": { "shape": extent } }
+        "geo_shape": { "geom": { "shape": extent } }
       };
     } else if (options.geometry && options.geometryType === 'polygon'){
       params.body.query.filtered.filter = {
-        "geo_shape": { "extent": { "shape": { "type":"polygon", "coordinates":JSON.parse(options.geometry)}}}
+        "geo_shape": { "geom": { "shape": { "type":"polygon", "coordinates":JSON.parse(options.geometry)}}}
       };
     }
     return params;
@@ -290,7 +290,8 @@ module.exports = {
         "itemid": table,
         "type": table.split('_')[0],
         "feature": JSON.stringify(feature),
-        "extent":  self.convertExtent( turfExtent( feature ))
+        //"extent":  self.convertExtent( turfExtent( feature ))
+        "geom":  feature.geometry
       };
       bulkInsert.push(doc);
     });
@@ -469,10 +470,10 @@ module.exports = {
                 "type": "string",
                 "index": "no"
               },
-              "extent": {
+              "geom": {
                 "type": "geo_shape", 
                 "tree": "geohash", 
-                "precision": "500m"
+                "precision": "1000m"
               }
             }
           }
