@@ -22,7 +22,8 @@
     "elasticsearch": "^4.0.2",
     "ngeohash": "^0.6.0",
     "sphericalmercator": "^1.0.3",
-    "turf-extent": "^1.0.4"
+    "turf-extent": "^1.0.4",
+    "turf-centroid": "^1.1.2"
   },
   "directories": {
     "test": "test"
