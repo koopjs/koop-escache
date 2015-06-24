@@ -17,7 +17,9 @@
   },
   "homepage": "https://github.com/koopjs/koop-escache",
   "dependencies": {
+    "async": "^1.2.1",
     "elasticsearch": "^4.0.2",
+    "ngeohash": "^0.6.0",
     "sphericalmercator": "^1.0.3",
     "turf-extent": "^1.0.4"
   },
@@ -26,6 +28,7 @@
   },
   "devDependencies": {
     "should": "^4.6.1",
+    "standard": "^4.3.2",
     "winston": "^0.9.0"
   }
 }
