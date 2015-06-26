@@ -13,7 +13,7 @@ before(function (done) {
     'db': {
       'conn': {
         host: '127.0.0.1:9200',
-      // log: 'trace'
+        log: 'trace'
       }
     }
   }
@@ -49,7 +49,7 @@ describe('ES Cache Tests', function () {
       })
     })
 
-    it('should error when missing key is sent', function (done) {
+  /*  it('should error when missing key is sent', function (done) {
       cache.getInfo(key + '-BS', function ( err, data ) {
         should.exist(err)
         done()
@@ -140,6 +140,7 @@ describe('ES Cache Tests', function () {
         done()
       })
     })
+  */
 
     it('should register and get a service host', function (done) {
       cache.serviceRegister('testhost', {id: 'id3', host: 'http://fake.service.com'}, function ( error, result ) {
@@ -162,7 +163,7 @@ describe('ES Cache Tests', function () {
   })
 })
 
-describe('indexing', function (done) {
+/*describe('indexing', function (done) {
   it('should generate an array of geohash substrings', function(done) {
     var point = [-77.069306, 38.897275]
     var geohashes = cache._createGeohashes(point)
@@ -243,6 +244,7 @@ describe('geohashing', function (done) {
 
 
 })
+*/
 
 // TODO Support WHERE filters
 /*

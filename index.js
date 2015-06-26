@@ -402,10 +402,9 @@ module.exports = {
     } else {
       this.client.search({
         index: this.indexName,
-        type: 'services'
-        //ids: { values: [id] }
+        type: 'services',
+        ids: { values: [id] }
       }, function (err, res) {
-        console.log(res);
         callback(err, res.hits.hits[0]._source)
       })
     }
