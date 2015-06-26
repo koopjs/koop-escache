@@ -143,7 +143,6 @@ describe('ES Cache Tests', function () {
 
     it('should register and get a service host', function (done) {
       cache.serviceRegister('testhost', {id: 'id3', host: 'http://fake.service.com'}, function ( error, result ) {
-        console.log(error, result)
         should.not.exist(error)
         /*cache.serviceGet('testhost', 'id3', function ( error, result ) {
           console.log(error, result)
@@ -153,13 +152,13 @@ describe('ES Cache Tests', function () {
       })
     })
 
-    /*it('should get an array of services', function (done) {
+    it('should get an array of services', function (done) {
       cache.serviceGet('testhost', null, function ( error, result ) {
         result.length.should.equal(1)
         should.not.exist(error)
         done()
       })
-    })*/
+    })
 
   })
 })

@@ -396,6 +396,7 @@ module.exports = {
         q: 'type:' + type,
         fields: ['_source']
       }, function (err, res) {
+        console.log(res)
         var services = res.hits.hits.map(function (s) { return s._source })
         callback(err, services)
       })
@@ -405,7 +406,6 @@ module.exports = {
         type: 'services',
         id: id
       }, function (err, res) {
-        console.log(err, res)
         callback(err, res.hits.hits[0]._source)
       })
     }
