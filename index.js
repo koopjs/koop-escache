@@ -1,515 +1,653 @@
-var elasticsearch = require('elasticsearch'),
-  turfExtent = require('turf-extent');
+var elasticsearch = require('elasticsearch')
+var turfExtent = require('turf-extent')
+var ngeohash = require('ngeohash')
+var centroid = require ('turf-centroid')
+var async = require('async')
 
 module.exports = {
   type: 'elasticsearch',
-  indexName: 'koop', 
+  indexName: 'koop',
   limit: 2000,
 
-  connect: function( conn, koop, callback ){
-  
-    // use the koop logger 
-    this.log = koop.log;
-  
-    this.client = new elasticsearch.Client(conn);
+  connect: function (conn, koop, callback) {
+    // use the koop logger
+    this.log = koop.log
+
+    this.client = new elasticsearch.Client(conn)
     // creates table only if they dont exist
-    this._createIndex( this.indexName, function(err, done){
-      if ( callback ){
-        callback();
+    this._createIndex(this.indexName, function (err, done) {
+      if (callback) {
+        callback()
       }
-    });
-    return this; 
+    })
+    return this
   },
 
-  // returns the info doc for a key 
-  getCount: function( key, options, callback ){
-    var self = this;
-    var params = this.buildQueryParams(key, options);
-    this.client.search( params, function(err, result){
-      if ( err || !result ){
-        return callback(err, null);
+  // returns the info doc for a key
+  getCount: function (key, options, callback) {
+    var self = this
+    var params = this.buildQueryParams(key, options)
+    this.client.search(params, function (err, result) {
+      if (err || !result) {
+        return callback(err, null)
       }
-      self.log.debug('Get Count', key, result.hits.total);
-      callback(null, result.hits.total);
-    });
+      self.log.debug('Get Count', key, result.hits.total)
+      callback(null, result.hits.total)
+    })
   },
 
-  createExtent: function(geometry){
-    var extent;
-    var geom = this.parseGeometry( geometry );
-    if ((geom.xmin || geom.xmin === 0) && (geom.ymin || geom.ymin === 0)){
-      var box = geom;
-      if ( box.spatialReference.wkid != 4326 ){
-        var mins = merc.inverse( [box.xmin, box.ymin] ),
-          maxs = merc.inverse( [box.xmax, box.ymax] );
-        extent = this.convertExtent([mins[0], mins[1], maxs[0], maxs[1]]);
+  createExtent: function (geometry) {
+    var extent
+    var geom = this.parseGeometry(geometry)
+    if ((geom.xmin || geom.xmin === 0) && (geom.ymin || geom.ymin === 0)) {
+      var box = geom
+      if (box.spatialReference.wkid !== 4326) {
+        var mins = merc.inverse([box.xmin, box.ymin]),
+          maxs = merc.inverse([box.xmax, box.ymax])
+        extent = this.convertExtent([mins[0], mins[1], maxs[0], maxs[1]])
       } else {
-        extent = this.convertExtent([box.xmin, box.ymin, box.xmax, box.ymax]);
+        extent = this.convertExtent([box.xmin, box.ymin, box.xmax, box.ymax])
       }
     }
-    return extent;
+    return extent
   },
 
   // returns the info doc for a key 
-  getInfo: function( key, callback ){
+  getInfo: function ( key, callback ) {
     this.client.get({
       index: this.indexName,
       type: 'info',
-      id: key.replace(/:/g,'_')
-    }, function(err, res){
-      var info;
-      if (!err && res){
-        info = res._source;
+      id: key.replace(/:/g, '_')
+    }, function (err, res) {
+      var info
+      if (!err && res) {
+        info = res._source
       }
-      callback(err, info);
-    });
+      callback(err, info)
+    })
   },
 
   // updates the info doc for a key 
-  updateInfo: function( key, info, callback ){
-    this.log.debug('Updating info %s %s', key, info.status);
+  updateInfo: function ( key, info, callback ) {
+    this.log.debug('Updating info %s %s', key, info.status)
     if (!info.status) {
-      info.status = '';
+      info.status = ''
     }
     this.client.update({
       index: this.indexName,
       type: 'info',
-      id: key.replace(/:/g,'_'),
+      id: key.replace(/:/g, '_'),
       body: {
-          doc: info
+        doc: info
       }
-    }, function(err, res){
-      if ( err || !res ){
-        callback(err, null);
+    }, function (err, res) {
+      if ( err || !res) {
+        callback(err, null)
       } else {
-        callback(null, info);
+        callback(null, info)
       }
-    });
+    })
   },
 
   // get data out of the db
-  select: function(key, options, callback){
-    var self = this;
+  select: function (key, options, callback) {
+    var self = this
 
-    if ( key !== 'all'){
-      key = key+'_'+(options.layer || 0 );
+    if ( key !== 'all') {
+      key = key + '_' + (options.layer || 0)
     }
-    key = key.replace(/:/g,'_');
+    key = key.replace(/:/g, '_')
 
     this.client.get({
       index: this.indexName,
       type: 'info',
       id: key
-    }, function(err, result){
-      if ( (err || !result) && key !== 'all'){
-        callback('Not Found', []);
+    }, function (err, result) {
+      if ( (err || !result) && key !== 'all') {
+        callback('Not Found', [])
       } else if (
-        result && 
-        result._source && 
-        result._source.status == 'processing' && 
-        !options.bypassProcessing 
-        ) {
-          callback( null, [{ status: 'processing' }]);
+        result &&
+        result._source &&
+        result._source.status == 'processing' &&
+        !options.bypassProcessing
+      ) {
+        callback(null, [{ status: 'processing' }])
       } else {
-          var info = result._source || {};
+        var info = result._source || {}
 
-          var params = self.buildQueryParams(key, options);
+        var params = self.buildQueryParams(key, options)
 
-          self.getCount(key, options, function(e, count) {
-            if (!options.limit && !e && count && (count > self.limit && options.enforce_limit) ){
-              callback( null, [{
-                exceeds_limit: true,
-                type: 'FeatureCollection',
-                features: [{}],
-                name: info.name,
-                sha: info.sha,
-                info: info.info,
-                updated_at: info.updated_at,
-                retrieved_at: info.retrieved_at,
-                expires_at: info.expires_at, 
-                count: count
-              }]);
+        self.getCount(key, options, function (e, count) {
+          if (!options.limit && !e && count && (count > self.limit && options.enforce_limit)) {
+            callback(null, [{
+              exceeds_limit: true,
+              type: 'FeatureCollection',
+              features: [{}],
+              name: info.name,
+              sha: info.sha,
+              info: info.info,
+              updated_at: info.updated_at,
+              retrieved_at: info.retrieved_at,
+              expires_at: info.expires_at,
+              count: count
+            }])
 
-            } else {
+          } else {
+            self.client.search(params, function (err, result) {
+              if ( result && result.hits && result.hits.total) {
+                var features = []
 
-              self.client.search(params, function (err, result) {
+                result.hits.hits.forEach(function (doc, i) {
+                  features.push(JSON.parse(doc._source.feature))
+                })
 
-                if ( result && result.hits && result.hits.total ) {
-                  var features = [];
-
-                  result.hits.hits.forEach(function(doc, i){
-                    features.push(JSON.parse(doc._source.feature));
-                  });
-
-                  callback( null, [{
-                    type: 'FeatureCollection', 
-                    features: features,
-                    name: info.name, 
-                    sha: info.sha, 
-                    info: info.info, 
-                    updated_at: info.updated_at,
-                    retrieved_at: info.retrieved_at,
-                    expires_at: info.expires_at,
-                    count: result.hits.length 
-                  }]);
-                } else {
-                  callback( 'Not Found', [{
-                    type: 'FeatureCollection',
-                    features: []
-                  }]);
-                }
-              });
-            }
-          });
+                callback(null, [{
+                  type: 'FeatureCollection',
+                  features: features,
+                  name: info.name,
+                  sha: info.sha,
+                  info: info.info,
+                  updated_at: info.updated_at,
+                  retrieved_at: info.retrieved_at,
+                  expires_at: info.expires_at,
+                  count: result.hits.length
+                }])
+              } else {
+                callback('Not Found', [{
+                  type: 'FeatureCollection',
+                  features: []
+                }])
+              }
+            })
+          }
+        })
       }
-    });
+    })
   },
 
   // build the params needed to make a search to the cache 
-  buildQueryParams: function(key, options){
-
+  buildQueryParams: function (key, options) {
     var params = {
       index: this.indexName,
       type: 'features',
       size: options.limit || 10000
-    };
+    }
 
     // apply the table/item level query
-    params.body = { "query": { "filtered": {} } };
+    params.body = { 'query': { 'filtered': {} } }
     if (key !== 'all') {
-      params.body.query.filtered.query = { "match": {"itemid": key.replace(/:/g,'_') }};
-    } else if (key === 'all' && options.type) { 
-      params.body.query.filtered.query = { "match": {"type": options.type }};
+      params.body.query.filtered.query = { 'match': {'itemid': key.replace(/:/g, '_') }}
+    } else if (key === 'all' && options.type) {
+      params.body.query.filtered.query = { 'match': {'type': options.type }}
     }
 
     // parse the where clause 
     /*if ( options.where ) { 
       if ( options.where != '1=1'){
-        //var clause = self.createWhereFromSql(options.where, options.fields);
-        //select += ' WHERE ' + clause;
+        //var clause = self.createWhereFromSql(options.where, options.fields)
+        //select += ' WHERE ' + clause
       } else {
-        //select += ' WHERE ' + options.where;
+        //select += ' WHERE ' + options.where
       }
       if (options.idFilter){
-        //select += ' AND ' + options.idFilter;
+        //select += ' AND ' + options.idFilter
       }
     } else if (options.idFilter) {
-      //select += ' WHERE ' + options.idFilter;
+      //select += ' WHERE ' + options.idFilter
     }*/
 
     // parse the geometry param from GeoServices REST
-    if ( options.geometry && !options.geometryType ){
-      var extent = this.createExtent( options.geometry );
+    if ( options.geometry && !options.geometryType) {
+      var extent = this.createExtent(options.geometry)
       params.body.query.filtered.filter = {
-        "geo_shape": { "geom": { "shape": extent } }
-      };
-    } else if (options.geometry && options.geometryType === 'polygon'){
+        'geo_shape': { 'geom': { 'shape': extent } }
+      }
+    } else if (options.geometry && options.geometryType === 'polygon') {
       params.body.query.filtered.filter = {
-        "geo_shape": { "geom": { "shape": { "type":"polygon", "coordinates":JSON.parse(options.geometry)}}}
-      };
+        'geo_shape': { 'geom': { 'shape': { 'type': 'polygon', 'coordinates': JSON.parse(options.geometry)}}}
+      }
     }
-    return params;
+    return params
   },
 
-  parseGeometry: function( geometry ){
-    var geom = geometry;
-    if ( typeof( geom ) == 'string' ){
+  parseGeometry: function ( geometry ) {
+    var geom = geometry
+    if ( typeof ( geom ) == 'string') {
       try {
-        geom = JSON.parse( geom );
-      } catch(e){
+        geom = JSON.parse(geom)
+      } catch(e) {
         try {
-          if ( geom.split(',').length == 4 ){
-            var extent = geom.split(',');
-            geom = { spatialReference: {wkid: 4326} };
-            geom.xmin = extent[0];
-            geom.ymin = extent[1];
-            geom.xmax = extent[2];
-            geom.ymax = extent[3];
+          if ( geom.split(',').length == 4) {
+            var extent = geom.split(',')
+            geom = { spatialReference: {wkid: 4326} }
+            geom.xmin = extent[0]
+            geom.ymin = extent[1]
+            geom.xmax = extent[2]
+            geom.ymax = extent[3]
           }
-        } catch(error){
-          this.log.error('Error building bbox from query ' + geometry);
+        } catch(error) {
+          this.log.error('Error building bbox from query ' + geometry)
         }
       }
     }
-    return geom;
+    return geom
   },
 
   // create a collection and insert features
   // create a 2d index 
-  insert: function( key, geojson, layerId, callback ){
-    var self = this; 
+  insert: function ( key, geojson, layerId, callback ) {
+    var self = this
     var info = {},
-      count = 0;
-      error = null;
-      
-      info.name = geojson.name ;
-      info.updated_at = geojson.updated_at;
-      info.expires_at = geojson.expires_at;
-      info.retrieved_at = geojson.retrieved_at;
-      info.status = geojson.status;
-      info.format = geojson.format;
-      info.sha = geojson.sha;
-      info.info = geojson.info;
-      info.host = geojson.host;
-   
-      var table = key.replace(/:/g,'_')+'_'+layerId;
+      count = 0
+    error = null
 
-      if ( geojson.length ){
-        geojson = geojson[0];
-      }
+    info.name = geojson.name 
+    info.updated_at = geojson.updated_at
+    info.expires_at = geojson.expires_at
+    info.retrieved_at = geojson.retrieved_at
+    info.status = geojson.status
+    info.format = geojson.format
+    info.sha = geojson.sha
+    info.info = geojson.info
+    info.host = geojson.host
 
-      // TODO Why not use an update query here? 
-      self.client.delete({
+    var table = key.replace(/:/g, '_') + '_' + layerId
+
+    if ( geojson.length) {
+      geojson = geojson[0]
+    }
+
+    // TODO Why not use an update query here? 
+    self.client.delete({
+      index: self.indexName,
+      type: 'info',
+      id: table
+    }, function (err, res) {
+      self.client.create({
         index: self.indexName,
         type: 'info',
-        id: table
-      }, function(err, res){
-        self.client.create({
-          index: self.indexName,
-          type: 'info',
-          id: table,
-          body: JSON.stringify(info)
-        }, function (error, response) {
-          if (geojson.features && geojson.features.length){
-            self.insertPartial(key, geojson, layerId, callback );
-          } else {
-            callback();
-          }
-        });
-      });
-    
+        id: table,
+        body: JSON.stringify(info)
+      }, function (error, response) {
+        if (geojson.features && geojson.features.length) {
+          self.insertPartial(key, geojson, layerId, callback)
+        } else {
+          callback()
+        }
+      })
+    })
+
   },
 
-  insertPartial: function( key, geojson, layerId, callback ){
-    var self = this;
-    var table = key.replace(/:/g,'_') + "_" + layerId;
-    var bulkInsert = [], doc;
-    geojson.features.forEach(function(feature, i){
-      bulkInsert.push({ index:  { _index: self.indexName, _type: 'features'} });
-      doc = {
-        "itemid": table,
-        "type": table.split('_')[0],
-        "feature": JSON.stringify(feature),
-        //"extent":  self.convertExtent( turfExtent( feature ))
-        "geom":  feature.geometry
-      };
-      bulkInsert.push(doc);
-    });
-
-    self.client.bulk({
-      body: bulkInsert,
-    }, callback);
+  insertPartial: function ( key, geojson, layerId, callback ) {
+    var bulk = this._prepareBulk(key, layerId, geojson)
+    this.client.bulk({
+      body: bulk,
+    }, callback)
   },
 
   // inserts geojson features into the feature column of the given table
-  insertFeature: function(table, feature, i, callback){
+  insertFeature: function (table, feature, i, callback) {
     try {
       this.client.create({
         index: this.indexName,
         type: 'features',
-        id: table+'_'+i,
+        id: table + '_' + i,
         body: {
-          "itemid": table,
-          "feature": JSON.stringify(feature),
-          "extent":  this.convertExtent( turfExtent( feature ))
+          'itemid': table,
+          'feature': JSON.stringify(feature),
+          'extent': this.convertExtent(turfExtent(feature))
         }
       }, function (err, res) {
-        callback(err, res);
-      });
+        callback(err, res)
+      })
     } catch (e) {
-      console.log('Error inserting feature', e);
-      callback(e);
+      console.log('Error inserting feature', e)
+      callback(e)
     }
   },
 
-  convertExtent: function(coords) {
-    var geometry = [];
+  convertExtent: function (coords) {
+    var geometry = []
     // upper left
-    geometry.push([parseFloat(coords[0]), parseFloat(coords[3])]);
+    geometry.push([parseFloat(coords[0]), parseFloat(coords[3])])
     // lower right
-    geometry.push([parseFloat(coords[2]), parseFloat(coords[1])]);
+    geometry.push([parseFloat(coords[2]), parseFloat(coords[1])])
     var envelope = {
-        "type": "envelope",
-        "coordinates": geometry
-    };
-    return envelope;
+      'type': 'envelope',
+      'coordinates': geometry
+    }
+    return envelope
   },
- 
-  remove: function( key, callback){
-    var self = this;
-  
+
+  remove: function ( key, callback) {
+    var self = this
+
     // other caches use : and ES doesnt like that
-    key = key.replace(/:/g,'_');
+    key = key.replace(/:/g, '_')
 
     this.client.delete({
       index: this.indexName,
       type: 'info',
       id: key
-    }, function(err, res){
+    }, function (err, res) {
       self.client.deleteByQuery({
         index: self.indexName,
         type: 'features',
-        q: 'itemid:'+key.replace(/\*/g,'\\*').replace(/,/g,'\,')
-      }, function(err, res){
-        callback(err, res);
+        q: 'itemid:' + key.replace(/\*/g, '\\*').replace(/,/g, '\,')
+      }, function (err, res) {
+        callback(err, res)
       })
-    });
+    })
 
   },
 
-  dropTable: function(table, callback){
-    this.remove(table, callback);
+  dropTable: function (table, callback) {
+    this.remove(table, callback)
   },
 
-  serviceRegister: function( type, info, callback){
-    var self = this;
+  serviceRegister: function ( type, info, callback) {
+    var self = this
     try {
       this.client.create({
         index: this.indexName,
         type: 'services',
         id: info.id,
         body: {
-          "type": type,
-          "id": info.id,
-          "host": info.host
+          'type': type,
+          'id': info.id,
+          'host': info.host
         }
       }, function (err, res) {
-        callback(err, res);
-      });
+        self.client.indices.refresh({}, callback);
+      })
     } catch (e) {
-      console.log('Error inserting service', e);
-      callback(e);
+      console.log('Error inserting service', e)
+      callback(e)
     }
   },
 
-  serviceCount: function( type, callback){
-    var self = this;
+  serviceCount: function (type, callback) {
+    var self = this
     this.client.search({
       index: this.indexName,
       type: 'services',
-      q: 'type:'+type,
+      q: 'type:' + type
     }, function (err, res) {
-      callback(err, res);
-    });
+      callback(err, res)
+    })
   },
 
-  serviceRemove: function( type, id, callback){
+  serviceRemove: function (type, id, callback) {
     this.client.deleteByQuery({
       index: this.indexName,
       type: 'services',
-      q: 'id:'+id
-    }, function(err, res){
-      callback(err, res);
-    });
+      q: 'id:' + id
+    }, function (err, res) {
+      callback(err, res)
+    })
   },
 
-  serviceGet: function( type, id, callback){
+  serviceGet: function (type, id, callback) {
     if (!id) {
       this.client.search({
         index: this.indexName,
         type: 'services',
-        q: 'type:'+type,
+        q: 'type:' + type,
         fields: ['_source']
-      }, function(err, res){
-        var services = res.hits.hits.map(function(s){ return s._source; });
-        callback(err, services);
-      });
+      }, function (err, res) {
+        var services = res.hits.hits.map(function (s) { return s._source })
+        callback(err, services)
+      })
     } else {
-      this.client.search({
+      this.client.get({
         index: this.indexName,
         type: 'services',
         id: id
-      }, function(err, res){
-        callback(err, res.hits.hits[0]._source);
-      });
+      }, function (err, res) {
+        if (err) {
+          return callback(err)
+        }
+        callback(err, res._source)
+      })
     }
   },
 
-  timerSet: function(key, expires, callback){
-    callback( null, true);
+  timerSet: function (key, expires, callback) {
+    callback(null, true)
   },
 
-  timerGet: function(key, callback){
-    callback();
+  timerGet: function (key, callback) {
+    callback()
   },
 
+  geohashAgg: function (key, limit, startPrecision, options, callback) {
+    var self = this
+    var query = this.buildQueryParams(key, options).body
+    this._getGeohashPrecision(query, limit, startPrecision, function (err, precision) {
+      if (err) return callback(err)
+      self._getGeohash(query, precision, function (err, json) {
+        if (err) return callback(err)
+        callback(null, self._mungeGeohashAgg(json))
+      })
+    })
+  },
 
-  //--------------
+  // --------------
   // PRIVATE METHODS
-  //-------------
+  // -------------
 
-  _createIndex: function( name, callback ){
-    var self = this;
-    this.client.indices.create({index: name}, function(err, result) {
+  _createIndex: function (name, callback) {
+    var self = this
+    this.client.indices.create({index: name}, function (err, result) {
       // create the info index
       self.client.indices.putMapping({
-        index: name, 
-        type: 'info', 
+        index: name,
+        type: 'info',
         body: {
           'properties': {
             'item': {
-              "type": "string",
-              "index": "no"
+              'type': 'string',
+              'index': 'no'
             }
           }
         }
-      }, function(err, res){
+      }, function (err, res) {
         // create the feature index
         self.client.indices.putMapping({
           index: name,
           type: 'features',
           body: {
-            "properties": {
-              "itemid": {
-                "type": "string"
+            'properties': {
+              'itemid': {
+                'type': 'string'
               },
-              "type": {
-                "type": "string"
+              'type': {
+                'type': 'string'
               },
-              "feature": {
-                "type": "string",
-                "index": "no"
+              'feature': {
+                'type': 'string',
+                'index': 'no'
               },
-              "geom": {
-                "type": "geo_shape", 
-                "tree": "geohash", 
-                "precision": "1000m"
+              'geohash3': {
+                'type': 'string'
+              },
+              'geohash4': {
+                'type': 'string'
+              },
+              'geohash5': {
+                'type': 'string'
+              },
+              'geohash6': {
+                'type': 'string'
+              },
+              'geohash7': {
+                'type': 'string'
+              },
+              'geohash8': {
+                'type': 'string'
+              },
+              'geom': {
+                'type': 'geo_shape',
+                'tree': 'geohash',
+                'precision': '1000m'
               }
             }
           }
-        }, function(err, res){
+        }, function (err, res) {
           self.client.indices.putMapping({
             index: name,
             type: 'services',
             body: {
-              "properties": {
-                "id": { "type": "string" },
-                "type": { "type": "string" },
-                "host": { "type": "string" }
+              'properties': {
+                'id': { 'type': 'string' },
+                'type': { 'type': 'string' },
+                'host': { 'type': 'string' }
               }
             }
-          }, function(err, res){
-            callback();
-          });
-        });
-      });
-    });
+          }, function (err, res) {
+            callback()
+          })
+        })
+      })
+    })
   },
 
-  _query: function(type, query, callback){
+  _prepareBulk: function (key, layerId, geojson) {
+    var self = this
+    var table = key.replace(/:/g, '_') + '_' + layerId
+    var bulk = [], doc
+    geojson.features.forEach(function (feature, i) {
+      bulk.push({ index: { _index: self.indexName, _type: 'features'} })
+      doc = {
+        'itemid': table,
+        'type': table.split('_')[0],
+        'feature': JSON.stringify(feature),
+        // "extent":  self.convertExtent( turfExtent( feature ))
+        'geom': feature.geometry
+      }
+      var point = centroid(feature).geometry.coordinates
+      // add in the geohash substrings 
+      var geohashes = self._createGeohashes(point)
+      var i = 0
+      geohashes.forEach(function(geohash) {
+        doc['geohash' + (i + 3).toString()] = geohash
+        i++
+      })
+      bulk.push(doc)
+    })
+    return bulk
+  },
+
+  _createGeohashes: function (point) {
+    // points are coming in as geojson, so reverse the lat and long for ngeohash
+    try {
+      var geohash = ngeohash.encode(point[1],point[0], 8)
+      var geohashes = []
+      var i = 0
+      while (i <= 5) {
+        geohashes.push(geohash.slice(0, i + 3))
+        i++
+      }
+    } catch (err) {
+      console.trace(err)
+    }
+    return geohashes
+  },
+
+  _countUniqueGeohashes: function (query, precision, callback) {
+    var agg = {
+      count: {
+        cardinality: {
+          field: 'geohash' + precision.toString(),
+          precision_threshold: this.limit
+        }
+      }
+    }
+    query.aggs = agg
+    query.size = 0
+    query.fields = []
+    this.client.search({
+      index: this.indexName,
+      type: 'features',
+      body: query
+    }, function(err, res) {
+      try {
+        var count = res.aggregations.count.value
+        callback(null, count)
+      } catch (e) {
+        callback(e, null)
+      }  
+    })
+  },
+
+  _getGeohashPrecision: function (query, limit, start, callback) {
+    var precision = start || 9
+    var count =  limit + 1
+    var self = this    
+    async.whilst(
+      function () {return count > limit && precision >= 3},
+      function (callback) {
+        precision--
+        self._countUniqueGeohashes(query, precision, function (err, res) {
+          if (err) return callback(err)
+          count = res
+          callback()
+        })
+      },
+      function (err) {
+        callback(err, precision)
+      }
+    )
+  },
+
+  _getGeohash: function (query, precision, callback) {
+    var self = this
+    query.size = 0
+    var options = {
+      index: this.indexName,
+      type: 'features',
+      body: query
+    }
+    options.body.aggregations = {
+      geohash: {
+        terms: {
+          field: 'geohash' + precision.toString(),
+          size: 0
+        }
+      }
+    }
+    this.client.search(options, function(err, res) {
+      if (err) return callback(err)
+      callback(null, res)
+    })
+  },
+
+  _mungeGeohashAgg: function (json) {
+    var geohashAgg = []
+    json.aggregations.geohash.buckets.forEach(function(geohash) {
+      var hash = {}
+      hash[geohash.key] = geohash.doc_count
+      geohashAgg.push(hash)
+    })
+    return geohashAgg
+  },
+
+
+  _query: function (type, query, callback) {
     this.client.search({
       index: this.indexName,
       type: type,
       q: query || ''
     }).then(function (resp) {
-        var hits = resp.hits.hits;
-        if ( callback ) {
-          callback(err, hits);
-        }
-      }, function (err) {
-        console.trace(err.message);
-    });
+      var hits = resp.hits.hits
+      if ( callback ) {
+        callback(err, hits)
+      }
+    }, function (err) {
+      console.trace(err.message)
+    })
 
   }
 
-};
+}
