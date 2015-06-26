@@ -393,7 +393,7 @@ module.exports = {
       this.client.search({
         index: this.indexName,
         type: 'services',
-        q: 'type:' + type,
+        q: type,
         fields: ['_source']
       }, function (err, res) {
         var services = res.hits.hits.map(function (s) { return s._source })
