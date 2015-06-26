@@ -355,7 +355,7 @@ module.exports = {
         id: info.id,
         body: {
           'type': type,
-          'sid': info.id,
+          'id': info.id,
           'host': info.host
         }
       }, function (err, res) {
@@ -382,7 +382,7 @@ module.exports = {
     this.client.deleteByQuery({
       index: this.indexName,
       type: 'services',
-      q: 'sid:' + id
+      q: 'id:' + id
     }, function (err, res) {
       callback(err, res)
     })
