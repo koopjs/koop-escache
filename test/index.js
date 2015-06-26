@@ -142,11 +142,13 @@ describe('ES Cache Tests', function () {
       })
     })
 
-    it('should register and get a service host', function (done) {
-      cache.serviceGet('test', null, function ( error, result ) {
-        result.length.should.equal(1)
-        should.not.exist(error)
-        done()
+    it('should register and get an array of services', function (done) {
+      cache.serviceRegister('test', {id: 'test1', host: 'http://fake.service.com'}, function ( error, result ) {
+        cache.serviceGet('test', null, function ( error, result ) {
+          result.length.should.equal(1)
+          should.not.exist(error)
+          done()
+        })
       })
     })
 
