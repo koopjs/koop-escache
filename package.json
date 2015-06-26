@@ -1,6 +1,6 @@
 {
   "name": "koop-escache",
-  "version": "0.0.7",
+  "version": "0.1.0",
   "description": "An Elastic Search cache for koop",
   "main": "index.js",
   "scripts": {
