@@ -403,7 +403,7 @@ module.exports = {
       this.client.search({
         index: this.indexName,
         type: 'services',
-        ids: [id]
+        ids: { values: [id] }
       }, function (err, res) {
         callback(err, res.hits.hits[0]._source)
       })
