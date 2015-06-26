@@ -12,8 +12,8 @@ before(function (done) {
   var config = {
     'db': {
       'conn': {
-        host: '127.0.0.1:9200',
-        log: 'trace'
+        host: '127.0.0.1:9200'
+        //log: 'trace'
       }
     }
   }
@@ -27,7 +27,7 @@ before(function (done) {
   cache.log = new logger(config)
 })
 
-/*before(function (done) {
+before(function (done) {
   cache.insert(key, repoData[0], 0, function (e, r) {
     done()
   })
@@ -37,19 +37,13 @@ after(function (done) {
   cache.remove(key + '_0', function (e, r) {
     done()
   })
-})*/
+})
 
 describe('ES Cache Tests', function () {
 
   describe('when caching a geojson data', function () {
 
-    after(function (done) {
-      cache.serviceRemove('testhost', 'id3', function (e, r) {
-        done()
-      })
-    })
-
-  /*  it('should error when missing key is sent', function (done) {
+    it('should error when missing key is sent', function (done) {
       cache.getInfo(key + '-BS', function ( err, data ) {
         should.exist(err)
         done()
@@ -140,30 +134,37 @@ describe('ES Cache Tests', function () {
         done()
       })
     })
-  */
 
     it('should register and get a service host', function (done) {
-      cache.serviceRegister('testhost', {id: 'id3', host: 'http://fake.service.com'}, function ( error, result ) {
+      var id = 'id3'
+      cache.serviceRegister('testhost', {id: id, host: 'http://fake.service.com'}, function ( error, result ) {
         should.not.exist(error)
-        cache.serviceGet('testhost', 'id3', function ( error, result ) {
-          should.not.exist(error)
-          done()
+        cache.serviceGet('testhost', id, function ( error, result ) {
+          cache.serviceRemove('testhost', id, function ( error, result ) {
+            should.not.exist(error)
+            done()
+          })
         })
       })
     })
 
     it('should get an array of services', function (done) {
-      cache.serviceGet('testhost', null, function ( error, result ) {
-        result.length.should.equal(1)
-        should.not.exist(error)
-        done()
+      var id = 'id4'
+      cache.serviceRegister('testhost', {id: id, host: 'http://fake.service.com'}, function ( error, result ) {
+        cache.serviceGet('testhost', null, function ( error, result ) {
+          result.length.should.equal(1)
+          should.not.exist(error)
+          cache.serviceRemove('testhost', id, function ( error, result ) {
+            done()
+          })
+        })
       })
     })
 
   })
 })
 
-/*describe('indexing', function (done) {
+describe('indexing', function (done) {
   it('should generate an array of geohash substrings', function(done) {
     var point = [-77.069306, 38.897275]
     var geohashes = cache._createGeohashes(point)
@@ -244,7 +245,6 @@ describe('geohashing', function (done) {
 
 
 })
-*/
 
 // TODO Support WHERE filters
 /*

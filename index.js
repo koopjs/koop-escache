@@ -359,7 +359,7 @@ module.exports = {
           'host': info.host
         }
       }, function (err, res) {
-        callback(err, res)
+        self.client.indices.refresh({}, callback);
       })
     } catch (e) {
       console.log('Error inserting service', e)
@@ -393,7 +393,7 @@ module.exports = {
       this.client.search({
         index: this.indexName,
         type: 'services',
-        q: type,
+        q: 'type:' + type,
         fields: ['_source']
       }, function (err, res) {
         var services = res.hits.hits.map(function (s) { return s._source })
