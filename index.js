@@ -405,6 +405,7 @@ module.exports = {
         type: 'services',
         id: id
       }, function (err, res) {
+        console.log(err, res)
         callback(err, res.hits.hits[0]._source)
       })
     }
