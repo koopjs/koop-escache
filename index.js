@@ -358,9 +358,7 @@ module.exports = {
           'id': info.id,
           'host': info.host
         }
-      }, function (err, res) {
-        self.client.indices.refresh({}, callback);
-      })
+      }, callback)
     } catch (e) {
       console.log('Error inserting service', e)
       callback(e)
