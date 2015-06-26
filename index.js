@@ -400,12 +400,15 @@ module.exports = {
         callback(err, services)
       })
     } else {
-      this.client.search({
+      this.client.get({
         index: this.indexName,
         type: 'services',
-        ids: { values: [id] }
+        id: id
       }, function (err, res) {
-        callback(err, res.hits.hits[0]._source)
+        if (err) {
+          return callback(err)
+        }
+        callback(err, res._source)
       })
     }
   },

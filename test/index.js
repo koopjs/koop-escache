@@ -27,7 +27,7 @@ before(function (done) {
   cache.log = new logger(config)
 })
 
-before(function (done) {
+/*before(function (done) {
   cache.insert(key, repoData[0], 0, function (e, r) {
     done()
   })
@@ -37,7 +37,7 @@ after(function (done) {
   cache.remove(key + '_0', function (e, r) {
     done()
   })
-})
+})*/
 
 describe('ES Cache Tests', function () {
 
