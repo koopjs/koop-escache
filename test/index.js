@@ -139,10 +139,12 @@ describe('ES Cache Tests', function () {
       var id = 'id3'
       cache.serviceRegister('testhost', {id: id, host: 'http://fake.service.com'}, function ( error, result ) {
         should.not.exist(error)
-        cache.serviceGet('testhost', id, function ( error, result ) {
-          cache.serviceRemove('testhost', id, function ( error, result ) {
-            should.not.exist(error)
-            done()
+        cache.client.indices.refresh({}, function () {
+          cache.serviceGet('testhost', id, function ( error, result ) {
+            cache.serviceRemove('testhost', id, function ( error, result ) {
+              should.not.exist(error)
+              done()
+            })
           })
         })
       })
@@ -151,11 +153,13 @@ describe('ES Cache Tests', function () {
     it('should get an array of services', function (done) {
       var id = 'id4'
       cache.serviceRegister('testhost', {id: id, host: 'http://fake.service.com'}, function ( error, result ) {
-        cache.serviceGet('testhost', null, function ( error, result ) {
-          result.length.should.equal(1)
-          should.not.exist(error)
-          cache.serviceRemove('testhost', id, function ( error, result ) {
-            done()
+        cache.client.indices.refresh({}, function () {
+          cache.serviceGet('testhost', null, function ( error, result ) {
+            result.length.should.equal(1)
+            should.not.exist(error)
+            cache.serviceRemove('testhost', id, function ( error, result ) {
+              done()
+            })
           })
         })
       })

@@ -2,6 +2,10 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.1.1] - 2015-06-26
+### Removed
+* Got rid of the index refresh in serviceRegister as its not needed there in every case. Moved it to the tests.
+
 ## [0.1.0] - 2015-06-24
 ### Added
 * Geohashes are added to the index
@@ -43,6 +47,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 * Support for insert, select, counting, and removing data
 * 12 tests passing 
 
+[0.1.1]: https://github.com/Esri/koop-pgcache/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Esri/koop-pgcache/compare/v0.0.7...v0.1.0
 [0.0.7]: https://github.com/Esri/koop-pgcache/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/Esri/koop-pgcache/compare/v0.0.5...v0.0.6
