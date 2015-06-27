@@ -2,6 +2,10 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.1.3] - 2015-06-27
+### Fixed
+* Don't try to generate geohash for null geometry
+
 ## [0.1.2] - 2015-06-27
 ### Changed
 * Index queries request the minimum amount of data
@@ -51,6 +55,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 * Support for insert, select, counting, and removing data
 * 12 tests passing 
 
+[0.1.3]: https://github.com/Esri/koop-pgcache/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/Esri/koop-pgcache/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Esri/koop-pgcache/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Esri/koop-pgcache/compare/v0.0.7...v0.1.0
 [0.0.7]: https://github.com/Esri/koop-pgcache/compare/v0.0.6...v0.0.7

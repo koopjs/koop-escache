@@ -529,14 +529,16 @@ module.exports = {
         // "extent":  self.convertExtent( turfExtent( feature ))
         'geom': feature.geometry
       }
-      var point = centroid(feature).geometry.coordinates
-      // add in the geohash substrings 
-      var geohashes = self._createGeohashes(point)
-      var i = 0
-      geohashes.forEach(function(geohash) {
-        doc['geohash' + (i + 3).toString()] = geohash
-        i++
-      })
+      if (feature.geometry) {
+        var point = centroid(feature).geometry.coordinates
+        // add in the geohash substrings 
+        var geohashes = self._createGeohashes(point)
+        var i = 0
+        geohashes.forEach(function(geohash) {
+          doc['geohash' + (i + 3).toString()] = geohash
+          i++
+        })
+      }
       bulk.push(doc)
     })
     return bulk
