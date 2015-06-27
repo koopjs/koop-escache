@@ -2,6 +2,10 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.1.2] - 2015-06-27
+### Changed
+* Index queries request the minimum amount of data
+
 ## [0.1.1] - 2015-06-26
 ### Removed
 * Got rid of the index refresh in serviceRegister as its not needed there in every case. Moved it to the tests.
