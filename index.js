@@ -138,7 +138,7 @@ module.exports = {
                 var features = []
 
                 result.hits.hits.forEach(function (doc, i) {
-                  features.push(JSON.parse(doc._source.feature))
+                  features.push(JSON.parse(doc.fields.feature[0]))
                 })
 
                 callback(null, [{
@@ -174,7 +174,12 @@ module.exports = {
     }
 
     // apply the table/item level query
-    params.body = { 'query': { 'filtered': {} } }
+    params.body = {
+      "query": {
+        "filtered": {}
+      },
+      "fields": ["feature"]
+    }
     if (key !== 'all') {
       params.body.query.filtered.query = { 'match': {'itemid': key.replace(/:/g, '_') }}
     } else if (key === 'all' && options.type) {
