@@ -639,9 +639,9 @@ module.exports = {
     var self = this
     params.search_type = 'scan'
     params.scroll = '30s'
-    if (!params.size) params.size = 40
+    params.size = 200
     this.client.search(params, function scroll (err, res) {
-      if (err) return callback(err)
+      if (err) console.trace(err)
       res.hits.hits.forEach(function (hit) {
         try {
           features.push(JSON.parse(hit.fields.feature))
