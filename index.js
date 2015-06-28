@@ -646,7 +646,6 @@ module.exports = {
     this.client.search(params, function scroll (err, res) {
       if (err) console.trace(err)
       count += res.hits.hits.length
-      console.log(count)
       res.hits.hits.forEach(function (hit) {
         try {
           features.push(JSON.parse(hit.fields.feature))
