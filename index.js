@@ -636,17 +636,22 @@ module.exports = {
   _scrollSearch: function(params, callback) {
     var features = []
     var parseFailures = 0
+    var count = 0
     var self = this
     params.search_type = 'scan'
     params.scroll = '30s'
-    params.size = 200
+    // the actual number sent = shards * params.size = 10
+    // https://www.elastic.co/guide/en/elasticsearch/guide/current/scan-scroll.html
+    params.size = 40
     this.client.search(params, function scroll (err, res) {
       if (err) console.trace(err)
+      count += res.hits.hits.length
+      console.log(count)
       res.hits.hits.forEach(function (hit) {
         try {
           features.push(JSON.parse(hit.fields.feature))
         } catch (e) {
-          this.log.error(e, hit)
+          self.log.error(e, hit)
           parseFailures++
         }
       })
