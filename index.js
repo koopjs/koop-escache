@@ -133,14 +133,9 @@ module.exports = {
             }])
 
           } else {
-            self.client.search(params, function (err, result) {
-              if ( result && result.hits && result.hits.total) {
-                var features = []
-
-                result.hits.hits.forEach(function (doc, i) {
-                  features.push(JSON.parse(doc.fields.feature[0]))
-                })
-
+            self._scrollSearch(params, function (err, features) {
+              if (err) return callback(err)
+              if ( features && features.length) {
                 callback(null, [{
                   type: 'FeatureCollection',
                   features: features,
@@ -150,7 +145,7 @@ module.exports = {
                   updated_at: info.updated_at,
                   retrieved_at: info.retrieved_at,
                   expires_at: info.expires_at,
-                  count: result.hits.length
+                  count: features.length
                 }])
               } else {
                 callback('Not Found', [{
@@ -638,6 +633,38 @@ module.exports = {
     return geohashAgg
   },
 
+  _scrollSearch: function(params, callback) {
+    var features = []
+    var parseFailures = 0
+    var count = 0
+    var self = this
+    params.search_type = 'scan'
+    params.scroll = '30s'
+    // the actual number sent = shards * params.size = 10
+    // https://www.elastic.co/guide/en/elasticsearch/guide/current/scan-scroll.html
+    params.size = 40
+    this.client.search(params, function scroll (err, res) {
+      if (err) console.trace(err)
+      count += res.hits.hits.length
+      res.hits.hits.forEach(function (hit) {
+        try {
+          features.push(JSON.parse(hit.fields.feature))
+        } catch (e) {
+          self.log.error(e, hit)
+          parseFailures++
+        }
+      })
+      if (res.hits.total !== (features.length - parseFailures)) {
+        var options = {
+          scrollId: res._scroll_id,
+          scroll: '30s'
+        }
+        self.client.scroll(options, scroll)
+      } else {
+        callback(null, features)
+      }
+    })
+  },
 
   _query: function (type, query, callback) {
     this.client.search({
