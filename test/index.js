@@ -185,6 +185,13 @@ describe('indexing', function (done) {
     doc.geohash8.should.equal('djv07f0s')
     done()
   })
+
+  it('should correctly prepare a document with no geometry', function (done) {
+    var geojson = {features: [{geometry: null}]}
+    var bulk = cache._prepareBulk('test', 0, geojson)
+    should.exist(bulk[1])
+    done()
+  })
 })
 
 describe('geohashing', function (done) {
