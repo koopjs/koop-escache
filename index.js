@@ -1,8 +1,9 @@
 var elasticsearch = require('elasticsearch')
 var turfExtent = require('turf-extent')
 var ngeohash = require('ngeohash')
-var centroid = require ('turf-centroid')
+var centroid = require('turf-centroid')
 var async = require('async')
+var merc = require('sphericalmercator')
 
 module.exports = {
   type: 'elasticsearch',
@@ -12,10 +13,12 @@ module.exports = {
   connect: function (conn, koop, callback) {
     // use the koop logger
     this.log = koop.log
+    var self = this
 
     this.client = new elasticsearch.Client(conn)
     // creates table only if they dont exist
     this._createIndex(this.indexName, function (err, done) {
+      if (err) self.log.debug(err)
       if (callback) {
         callback()
       }
@@ -42,8 +45,8 @@ module.exports = {
     if ((geom.xmin || geom.xmin === 0) && (geom.ymin || geom.ymin === 0)) {
       var box = geom
       if (box.spatialReference.wkid !== 4326) {
-        var mins = merc.inverse([box.xmin, box.ymin]),
-          maxs = merc.inverse([box.xmax, box.ymax])
+        var mins = merc.inverse([box.xmin, box.ymin])
+        var maxs = merc.inverse([box.xmax, box.ymax])
         extent = this.convertExtent([mins[0], mins[1], maxs[0], maxs[1]])
       } else {
         extent = this.convertExtent([box.xmin, box.ymin, box.xmax, box.ymax])
@@ -52,8 +55,8 @@ module.exports = {
     return extent
   },
 
-  // returns the info doc for a key 
-  getInfo: function ( key, callback ) {
+  // returns the info doc for a key
+  getInfo: function (key, callback) {
     this.client.get({
       index: this.indexName,
       type: 'info',
@@ -67,8 +70,8 @@ module.exports = {
     })
   },
 
-  // updates the info doc for a key 
-  updateInfo: function ( key, info, callback ) {
+  // updates the info doc for a key
+  updateInfo: function (key, info, callback) {
     this.log.debug('Updating info %s %s', key, info.status)
     if (!info.status) {
       info.status = ''
@@ -81,7 +84,7 @@ module.exports = {
         doc: info
       }
     }, function (err, res) {
-      if ( err || !res) {
+      if (err || !res) {
         callback(err, null)
       } else {
         callback(null, info)
@@ -93,7 +96,7 @@ module.exports = {
   select: function (key, options, callback) {
     var self = this
 
-    if ( key !== 'all') {
+    if (key !== 'all') {
       key = key + '_' + (options.layer || 0)
     }
     key = key.replace(/:/g, '_')
@@ -103,12 +106,12 @@ module.exports = {
       type: 'info',
       id: key
     }, function (err, result) {
-      if ( (err || !result) && key !== 'all') {
+      if ((err || !result) && key !== 'all') {
         callback('Not Found', [])
       } else if (
         result &&
         result._source &&
-        result._source.status == 'processing' &&
+        result._source.status === 'processing' &&
         !options.bypassProcessing
       ) {
         callback(null, [{ status: 'processing' }])
@@ -135,7 +138,7 @@ module.exports = {
           } else {
             self._scrollSearch(params, function (err, features) {
               if (err) return callback(err)
-              if ( features && features.length) {
+              if (features && features.length) {
                 callback(null, [{
                   type: 'FeatureCollection',
                   features: features,
@@ -160,7 +163,7 @@ module.exports = {
     })
   },
 
-  // build the params needed to make a search to the cache 
+  // build the params needed to make a search to the cache
   buildQueryParams: function (key, options) {
     var params = {
       index: this.indexName,
@@ -170,10 +173,10 @@ module.exports = {
 
     // apply the table/item level query
     params.body = {
-      "query": {
-        "filtered": {}
+      'query': {
+        'filtered': {}
       },
-      "fields": ["feature"]
+      'fields': ['feature']
     }
     if (key !== 'all') {
       params.body.query.filtered.query = { 'match': {'itemid': key.replace(/:/g, '_') }}
@@ -181,8 +184,8 @@ module.exports = {
       params.body.query.filtered.query = { 'match': {'type': options.type }}
     }
 
-    // parse the where clause 
-    /*if ( options.where ) { 
+    // parse the where clause
+    /*if ( options.where ) {
       if ( options.where != '1=1'){
         //var clause = self.createWhereFromSql(options.where, options.fields)
         //select += ' WHERE ' + clause
@@ -197,7 +200,7 @@ module.exports = {
     }*/
 
     // parse the geometry param from GeoServices REST
-    if ( options.geometry && !options.geometryType) {
+    if (options.geometry && !options.geometryType) {
       var extent = this.createExtent(options.geometry)
       params.body.query.filtered.filter = {
         'geo_shape': { 'geom': { 'shape': extent } }
@@ -210,14 +213,14 @@ module.exports = {
     return params
   },
 
-  parseGeometry: function ( geometry ) {
+  parseGeometry: function (geometry) {
     var geom = geometry
-    if ( typeof ( geom ) == 'string') {
+    if (typeof (geom) === 'string') {
       try {
         geom = JSON.parse(geom)
       } catch(e) {
         try {
-          if ( geom.split(',').length == 4) {
+          if (geom.split(',').length === 4) {
             var extent = geom.split(',')
             geom = { spatialReference: {wkid: 4326} }
             geom.xmin = extent[0]
@@ -234,14 +237,12 @@ module.exports = {
   },
 
   // create a collection and insert features
-  // create a 2d index 
-  insert: function ( key, geojson, layerId, callback ) {
+  // create a 2d index
+  insert: function (key, geojson, layerId, callback) {
     var self = this
-    var info = {},
-      count = 0
-    error = null
+    var info = {}
 
-    info.name = geojson.name 
+    info.name = geojson.name
     info.updated_at = geojson.updated_at
     info.expires_at = geojson.expires_at
     info.retrieved_at = geojson.retrieved_at
@@ -253,22 +254,24 @@ module.exports = {
 
     var table = key.replace(/:/g, '_') + '_' + layerId
 
-    if ( geojson.length) {
+    if (geojson.length) {
       geojson = geojson[0]
     }
 
-    // TODO Why not use an update query here? 
+    // TODO Why not use an update query here?
     self.client.delete({
       index: self.indexName,
       type: 'info',
       id: table
     }, function (err, res) {
+      if (err) self.log.debug(err)
       self.client.create({
         index: self.indexName,
         type: 'info',
         id: table,
         body: JSON.stringify(info)
       }, function (error, response) {
+        if (error) self.log.debug(error)
         if (geojson.features && geojson.features.length) {
           self.insertPartial(key, geojson, layerId, callback)
         } else {
@@ -279,10 +282,10 @@ module.exports = {
 
   },
 
-  insertPartial: function ( key, geojson, layerId, callback ) {
+  insertPartial: function (key, geojson, layerId, callback) {
     var bulk = this._prepareBulk(key, layerId, geojson)
     this.client.bulk({
-      body: bulk,
+      body: bulk
     }, callback)
   },
 
@@ -320,7 +323,7 @@ module.exports = {
     return envelope
   },
 
-  remove: function ( key, callback) {
+  remove: function (key, callback) {
     var self = this
 
     // other caches use : and ES doesnt like that
@@ -331,6 +334,7 @@ module.exports = {
       type: 'info',
       id: key
     }, function (err, res) {
+      if (err) return callback(err)
       self.client.deleteByQuery({
         index: self.indexName,
         type: 'features',
@@ -346,8 +350,7 @@ module.exports = {
     this.remove(table, callback)
   },
 
-  serviceRegister: function ( type, info, callback) {
-    var self = this
+  serviceRegister: function (type, info, callback) {
     try {
       this.client.create({
         index: this.indexName,
@@ -366,7 +369,6 @@ module.exports = {
   },
 
   serviceCount: function (type, callback) {
-    var self = this
     this.client.search({
       index: this.indexName,
       type: 'services',
@@ -438,6 +440,7 @@ module.exports = {
   _createIndex: function (name, callback) {
     var self = this
     this.client.indices.create({index: name}, function (err, result) {
+      if (err) self.log.debug(err)
       // create the info index
       self.client.indices.putMapping({
         index: name,
@@ -451,6 +454,7 @@ module.exports = {
           }
         }
       }, function (err, res) {
+        if (err) self.log.debug(err)
         // create the feature index
         self.client.indices.putMapping({
           index: name,
@@ -493,6 +497,7 @@ module.exports = {
             }
           }
         }, function (err, res) {
+          if (err) self.log.debug(err)
           self.client.indices.putMapping({
             index: name,
             type: 'services',
@@ -504,6 +509,7 @@ module.exports = {
               }
             }
           }, function (err, res) {
+            if (err) self.log.debug(err)
             callback()
           })
         })
@@ -526,12 +532,12 @@ module.exports = {
       }
       if (feature.geometry) {
         var point = centroid(feature).geometry.coordinates
-        // add in the geohash substrings 
+        // add in the geohash substrings
         var geohashes = self._createGeohashes(point)
-        var i = 0
-        geohashes.forEach(function(geohash) {
-          doc['geohash' + (i + 3).toString()] = geohash
-          i++
+        var j = 0
+        geohashes.forEach(function (geohash) {
+          doc['geohash' + (j + 3).toString()] = geohash
+          j++
         })
       }
       bulk.push(doc)
@@ -542,7 +548,7 @@ module.exports = {
   _createGeohashes: function (point) {
     // points are coming in as geojson, so reverse the lat and long for ngeohash
     try {
-      var geohash = ngeohash.encode(point[1],point[0], 8)
+      var geohash = ngeohash.encode(point[1], point[0], 8)
       var geohashes = []
       var i = 0
       while (i <= 5) {
@@ -571,20 +577,21 @@ module.exports = {
       index: this.indexName,
       type: 'features',
       body: query
-    }, function(err, res) {
+    }, function (err, res) {
+      if (err) return callback(err)
       try {
         var count = res.aggregations.count.value
         callback(null, count)
       } catch (e) {
         callback(e, null)
-      }  
+      }
     })
   },
 
   _getGeohashPrecision: function (query, limit, start, callback) {
     var precision = start || 9
-    var count =  limit + 1
-    var self = this    
+    var count = limit + 1
+    var self = this
     async.whilst(
       function () {return count > limit && precision >= 3},
       function (callback) {
@@ -602,7 +609,6 @@ module.exports = {
   },
 
   _getGeohash: function (query, precision, callback) {
-    var self = this
     query.size = 0
     var options = {
       index: this.indexName,
@@ -617,7 +623,7 @@ module.exports = {
         }
       }
     }
-    this.client.search(options, function(err, res) {
+    this.client.search(options, function (err, res) {
       if (err) return callback(err)
       callback(null, res)
     })
@@ -625,7 +631,7 @@ module.exports = {
 
   _mungeGeohashAgg: function (json) {
     var geohashAgg = []
-    json.aggregations.geohash.buckets.forEach(function(geohash) {
+    json.aggregations.geohash.buckets.forEach(function (geohash) {
       var hash = {}
       hash[geohash.key] = geohash.doc_count
       geohashAgg.push(hash)
@@ -633,7 +639,7 @@ module.exports = {
     return geohashAgg
   },
 
-  _scrollSearch: function(params, callback) {
+  _scrollSearch: function (params, callback) {
     var features = []
     var parseFailures = 0
     var count = 0
@@ -673,8 +679,8 @@ module.exports = {
       q: query || ''
     }).then(function (resp) {
       var hits = resp.hits.hits
-      if ( callback ) {
-        callback(err, hits)
+      if (callback) {
+        callback(null, hits)
       }
     }, function (err) {
       console.trace(err.message)
