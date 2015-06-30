@@ -1,30 +1,32 @@
-var should = require('should'),
-  logger = require('./logger')
+/* global before, after, describe, it */
 
-before(function (done) {
-  key = 'test'
-  repoData = require('./fixtures/data.geojson')
-  snowData = require('./fixtures/snow.geojson')
-  georgia = require('./fixtures/georgia.geojson')
-  geohashResponse = require('./fixtures/geohashResponse')
-  cache = require('../')
-  cache.indexName = 'koop-tester'
-  var config = {
-    'db': {
-      'conn': {
-        host: '127.0.0.1:9200'
-        //log: 'trace'
-      }
+var should = require('should')
+var Logger = require('./logger')
+var key = 'test'
+var repoData = require('./fixtures/data.geojson')
+var georgia = require('./fixtures/georgia.geojson')
+var geohashResponse = require('./fixtures/geohashResponse')
+var cache = require('../')
+var config = {
+  'db': {
+    'conn': {
+      host: '127.0.0.1:9200'
+    // log: 'trace'
     }
   }
+}
 
+cache.indexName = 'koop-tester'
+
+before(function (done) {
   cache.connect(config.db.conn, {}, function (err) {
+    should.not.exist(err)
     done()
   })
 
-  // init the koop log based on config params  
+  // init the koop log based on config params
   config.logfile = __dirname + '/test.log'
-  cache.log = new logger(config)
+  cache.log = new Logger(config)
 })
 
 before(function (done) {
@@ -40,18 +42,16 @@ after(function (done) {
 })
 
 describe('ES Cache Tests', function () {
-
   describe('when caching a geojson data', function () {
-
     it('should error when missing key is sent', function (done) {
-      cache.getInfo(key + '-BS', function ( err, data ) {
+      cache.getInfo(key + '-BS', function (err, data) {
         should.exist(err)
         done()
       })
     })
 
     it('should get info', function (done) {
-      cache.getInfo(key + '_0', function ( err, data ) {
+      cache.getInfo(key + '_0', function (err, data) {
         should.not.exist(err)
         data.name.should.equal('snow.geojson')
         done()
@@ -60,9 +60,10 @@ describe('ES Cache Tests', function () {
 
     it('should update info', function (done) {
       var k = key + '_0'
-      cache.getInfo(k, function ( err, data ) {
+      cache.getInfo(k, function (err, data) {
+        should.not.exist(err)
         data.name = 'snowNEW.geojson'
-        cache.updateInfo(k, data, function ( err, d ) {
+        cache.updateInfo(k, data, function (err, d) {
           d.name.should.equal('snowNEW.geojson')
           should.not.exist(err)
           done()
@@ -72,16 +73,17 @@ describe('ES Cache Tests', function () {
 
     it('should insert data with no features', function (done) {
       var k = key + '_zero'
-      cache.insert(k, {}, 0, function ( err, success ) {
+      cache.insert(k, {}, 0, function (err, success) {
         should.not.exist(err)
         cache.remove(k + '_0', function (err, res) {
+          should.not.exist(err)
           done()
         })
       })
     })
 
     it('should get count', function (done) {
-      cache.getCount(key + '_0', {}, function ( err, count ) {
+      cache.getCount(key + '_0', {}, function (err, count) {
         should.not.exist(err)
         count.should.equal(417)
         done()
@@ -89,7 +91,7 @@ describe('ES Cache Tests', function () {
     })
 
     it('should get count inside a bbox', function (done) {
-      cache.getCount(key + '_0', {geometry: '-105.55,20.0,-7.12,60.73'}, function ( err, count ) {
+      cache.getCount(key + '_0', {geometry: '-105.55,20.0,-7.12,60.73'}, function (err, count) {
         should.not.exist(err)
         count.should.equal(311)
         done()
@@ -97,7 +99,7 @@ describe('ES Cache Tests', function () {
     })
 
     it('should select data', function (done) {
-      cache.select(key, { layer: 0 }, function ( error, result ) {
+      cache.select(key, { layer: 0 }, function (error, result) {
         should.not.exist(error)
         result[0].features.length.should.equal(417)
         done()
@@ -105,14 +107,14 @@ describe('ES Cache Tests', function () {
     })
 
     it('should error when selecting a missing key', function (done) {
-      cache.select(key + '_fake', { layer: 0 }, function ( error, result ) {
+      cache.select(key + '_fake', { layer: 0 }, function (error, result) {
         should.exist(error)
         done()
       })
     })
 
     it('should select data inside a geom', function (done) {
-      cache.select(key, { layer: 0, geometry: '-105.55,20.0,-7.12,60.73' }, function ( error, result ) {
+      cache.select(key, { layer: 0, geometry: '-105.55,20.0,-7.12,60.73' }, function (error, result) {
         should.not.exist(error)
         result[0].features.length.should.equal(311)
         done()
@@ -120,7 +122,7 @@ describe('ES Cache Tests', function () {
     })
 
     it('should select all data inside a geom', function (done) {
-      cache.select('all', { layer: 0, geometry: '-105.55,20.0,-7.12,60.73' }, function ( error, result ) {
+      cache.select('all', { layer: 0, geometry: '-105.55,20.0,-7.12,60.73' }, function (error, result) {
         should.not.exist(error)
         result[0].features.length.should.equal(311)
         done()
@@ -128,7 +130,7 @@ describe('ES Cache Tests', function () {
     })
 
     it('should select all data', function (done) {
-      cache.select('all', { }, function ( error, result ) {
+      cache.select('all', { }, function (error, result) {
         should.not.exist(error)
         result[0].features.length.should.equal(417)
         done()
@@ -137,11 +139,12 @@ describe('ES Cache Tests', function () {
 
     it('should register and get a service host', function (done) {
       var id = 'id3'
-      cache.serviceRegister('testhost', {id: id, host: 'http://fake.service.com'}, function ( error, result ) {
+      cache.serviceRegister('testhost', {id: id, host: 'http://fake.service.com'}, function (error, result) {
         should.not.exist(error)
         cache.client.indices.refresh({}, function () {
-          cache.serviceGet('testhost', id, function ( error, result ) {
-            cache.serviceRemove('testhost', id, function ( error, result ) {
+          cache.serviceGet('testhost', id, function (error, result) {
+            should.not.exist(error)
+            cache.serviceRemove('testhost', id, function (error, result) {
               should.not.exist(error)
               done()
             })
@@ -152,12 +155,14 @@ describe('ES Cache Tests', function () {
 
     it('should get an array of services', function (done) {
       var id = 'id4'
-      cache.serviceRegister('testhost', {id: id, host: 'http://fake.service.com'}, function ( error, result ) {
+      cache.serviceRegister('testhost', {id: id, host: 'http://fake.service.com'}, function (error, result) {
+        should.not.exist(error)
         cache.client.indices.refresh({}, function () {
-          cache.serviceGet('testhost', null, function ( error, result ) {
+          cache.serviceGet('testhost', null, function (error, result) {
             result.length.should.equal(1)
             should.not.exist(error)
-            cache.serviceRemove('testhost', id, function ( error, result ) {
+            cache.serviceRemove('testhost', id, function (error, result) {
+              should.not.exist(error)
               done()
             })
           })
@@ -169,7 +174,7 @@ describe('ES Cache Tests', function () {
 })
 
 describe('indexing', function (done) {
-  it('should generate an array of geohash substrings', function(done) {
+  it('should generate an array of geohash substrings', function (done) {
     var point = [-77.069306, 38.897275]
     var geohashes = cache._createGeohashes(point)
     geohashes.length.should.equal(6)
@@ -210,7 +215,7 @@ describe('geohashing', function (done) {
     cache._countUniqueGeohashes(query, 3, function (err, count) {
       should.not.exist(err)
       count.should.equal(18)
-      cache._countUniqueGeohashes(query, 8, function(err, count) {
+      cache._countUniqueGeohashes(query, 8, function (err, count) {
         should.not.exist(err)
         count.should.equal(417)
         done()
@@ -253,7 +258,6 @@ describe('geohashing', function (done) {
       done()
     })
   })
-
 
 })
 

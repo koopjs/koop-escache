@@ -4,7 +4,7 @@
   "description": "An Elastic Search cache for koop",
   "main": "index.js",
   "scripts": {
-    "test": "mocha test/ -t 20000"
+    "test": "standard && mocha test/ -t 20000"
   },
   "repository": {
     "type": "git",
