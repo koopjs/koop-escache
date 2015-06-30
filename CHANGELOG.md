@@ -6,6 +6,9 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ### Changed
 * All files respect standard format
 
+### Fixed
+* Sphericalmercator package is referenced correctly
+
 ## [0.1.1] - 2015-06-29
 ### Changed
 * Searches now scroll through the index for more speed and less memory usage
