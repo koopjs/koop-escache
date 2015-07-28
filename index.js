@@ -185,7 +185,7 @@ module.exports = {
     }
 
     // parse the where clause
-    /*if ( options.where ) {
+    /* if ( options.where ) {
       if ( options.where != '1=1'){
         //var clause = self.createWhereFromSql(options.where, options.fields)
         //select += ' WHERE ' + clause
@@ -520,10 +520,10 @@ module.exports = {
   _prepareBulk: function (key, layerId, geojson) {
     var self = this
     var table = key.replace(/:/g, '_') + '_' + layerId
-    var bulk = [], doc
+    var bulk = []
     geojson.features.forEach(function (feature, i) {
       bulk.push({ index: { _index: self.indexName, _type: 'features'} })
-      doc = {
+      var doc = {
         'itemid': table,
         'type': table.split('_')[0],
         'feature': JSON.stringify(feature),
