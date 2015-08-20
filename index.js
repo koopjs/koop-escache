@@ -4,9 +4,13 @@ var ngeohash = require('ngeohash')
 var centroid = require('turf-centroid')
 var async = require('async')
 var merc = require('sphericalmercator')
+var pkg = require('./package')
 
 module.exports = {
-  type: 'elasticsearch',
+  type: 'cache',
+  name: 'elasticsearch',
+  version: pkg.version,
+
   indexName: 'koop',
   limit: 2000,
 
