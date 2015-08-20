@@ -1,5 +1,7 @@
 # koop-escache
 
+> ElasticSearch cache for [Koop](https://github.com/koopjs/koop) (experimental).
+
 [![npm version][npm-img]][npm-url]
 [![build status][travis-img]][travis-url]
 
@@ -8,17 +10,15 @@
 [travis-img]: https://img.shields.io/travis/koopjs/koop-escache.svg?style=flat-square
 [travis-url]: https://travis-ci.org/koopjs/koop-escache
 
-A node.js module that exposes an ElasticSearch data cache for [Koop](https://github.com/Esri/koop).
-
 ## Install
 
 ```
-npm install koop-escache
+npm install koop-escache --save
 ```
 
 ## Usage
 
-Koop's data caching is by default a local, in-memory object.
+Koop's data caching is by default a local, in-memory object. This allows you to use [ElasticSearch](https://www.elastic.co/products/elasticsearch) instead.
 
 ```js
 var config = require('./config.json');
@@ -30,7 +30,7 @@ koop.registerCache(koopES);
 
 ## Resources
 
-* [Koop](https://github.com/Esri/koop)
+* [Koop](https://github.com/koopjs/koop)
 * [ArcGIS for Developers](http://developers.arcgis.com)
 * [ArcGIS REST API Documentation](http://resources.arcgis.com/en/help/arcgis-rest-api/)
 * [@esri](http://twitter.com/esri)
