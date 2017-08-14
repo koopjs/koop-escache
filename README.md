@@ -1,5 +1,7 @@
 # koop-escache
 
+[![Greenkeeper badge](https://badges.greenkeeper.io/koopjs/koop-escache.svg)](https://greenkeeper.io/)
+
 > ElasticSearch cache for [Koop](https://github.com/koopjs/koop) (experimental).
 
 [![npm version][npm-img]][npm-url]
